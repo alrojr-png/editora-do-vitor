@@ -79,7 +79,8 @@ async function heroToEnglish(s, name, descPt) {
   const out = await chat(s,
     'Convert a Portuguese description of a story character into a concise English visual description for an image generator. ' +
     'Max 45 words. Include body/species, apparent age, hair, face, clothing with colors and accessories. ' +
-    'Keep every visual detail the author gave and invent nothing important. Output only the description, no preamble.',
+    'Keep every visual detail the author gave and invent nothing important. Never mention what is missing or not described. ' +
+    'Output only the description, no preamble.',
     `Character name: ${name}\nDescription (Portuguese): ${descPt}`, 200);
   return clean(out);
 }
@@ -111,7 +112,9 @@ function fallbackScene(book, page) {
 async function cfImage(s, prompt, seed) {
   const model = s.cf_image_model || DEFAULT_IMAGE_MODEL;
   const steps = Math.min(8, Math.max(1, parseInt(s.cf_steps || '4', 10) || 4));
-  const r = await cfRun(s, model, { prompt, steps, seed }, 120000);
+  // O flux-1-schnell da Cloudflare recusa o campo "seed" (erro 5006); a consistência vem da ficha do herói.
+  const body = model === DEFAULT_IMAGE_MODEL ? { prompt, steps } : { prompt, steps, seed };
+  const r = await cfRun(s, model, body, 120000);
   const b64 = r.image || r.result?.image;
   if (!b64) throw new FriendlyError('A IA não devolveu a imagem. Tente de novo.', 'server');
   return Buffer.from(b64, 'base64');
