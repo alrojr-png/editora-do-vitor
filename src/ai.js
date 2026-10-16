@@ -1,19 +1,39 @@
-// Conversa com as IAs: Cloudflare Workers AI (cota grátis diária) e Pollinations como reserva.
-const CF_TEXT_MODELS = ['@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/meta/llama-3.1-8b-instruct'];
-const DEFAULT_IMAGE_MODEL = '@cf/black-forest-labs/flux-1-schnell';
+// Conversa com a IA da Cloudflare Workers AI (cota grátis diária).
+// - Llama: lê a página escrita pelo Vítor e monta o roteiro dos quadrinhos; corrige ortografia.
+// - FLUX.2 klein: desenha cada quadrinho usando o personagem escolhido como imagem de referência.
+// - FLUX.1 schnell: desenhista reserva se o klein falhar.
+const TEXT_MODELS = ['@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/meta/llama-3.1-8b-instruct'];
+const KLEIN = '@cf/black-forest-labs/flux-2-klein-4b';
+const SCHNELL = '@cf/black-forest-labs/flux-1-schnell';
 
 const STYLES = {
-  manga_pb: 'black and white Japanese manga illustration, bold clean ink lines, screentone shading, dramatic manga panel composition, monochrome, high contrast, detailed manga art',
-  manga_cor: 'colorful anime manga illustration, cel shading, vibrant colors, clean line art, dynamic anime composition',
-  aquarela: "children's storybook illustration, detailed ink outlines with soft watercolor painting, warm light",
-  gibi: 'cartoon comic book illustration, bold outlines, flat vivid colors, fun expressive characters'
+  manga_pb: 'black and white Japanese manga art, bold clean ink lines, screentone shading, high contrast',
+  manga_cor: 'colored anime manga art, cel shading, vibrant colors, clean ink line art',
+  aquarela: "storybook comic art, detailed ink outlines with soft watercolor painting",
+  gibi: 'cartoon comic book art, bold outlines, flat vivid colors'
 };
+
+// Tamanho de cada formato de quadrinho (múltiplos de 512 gastam menos da cota).
+const SHAPES = {
+  wide: { w: 768, h: 512, hint: 'wide horizontal panel composition' },
+  tall: { w: 512, h: 768, hint: 'tall vertical panel composition' },
+  splash: { w: 768, h: 1024, hint: 'full page splash panel, dramatic composition' }
+};
+// Formatos por quantidade de quadrinhos na página (o desenho da página fica no renderer).
+const LAYOUTS = { 1: ['splash'], 2: ['wide', 'wide'], 3: ['wide', 'tall', 'tall'], 4: ['tall', 'tall', 'tall', 'tall'] };
 
 class FriendlyError extends Error {
   constructor(message, kind) { super(message); this.kind = kind; }
 }
 
 function hasCloudflare(s) { return Boolean(s.cf_account_id && s.cf_token); }
+
+// Os filtros de segurança barram personagens descritos como crianças; para a IA todos são "jovens".
+function safeWords(text) {
+  return String(text || '')
+    .replace(/\b(little |young )?(boy|girl|kid|child)s?\b/gi, 'young character')
+    .replace(/\bchildren\b/gi, 'young characters');
+}
 
 async function withTimeout(ms, fn) {
   const ctrl = new AbortController();
@@ -22,15 +42,15 @@ async function withTimeout(ms, fn) {
   finally { clearTimeout(timer); }
 }
 
-async function cfRun(s, model, body, timeoutMs = 90000) {
+async function cfFetch(s, model, body, headers, timeoutMs) {
   if (!hasCloudflare(s)) throw new FriendlyError('A IA ainda não foi configurada. Peça para um adulto abrir a Área dos pais.', 'config');
   const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(s.cf_account_id.trim())}/ai/run/${model}`;
   let res;
   try {
     res = await withTimeout(timeoutMs, signal => fetch(url, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${s.cf_token.trim()}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: { Authorization: `Bearer ${s.cf_token.trim()}`, ...headers },
+      body,
       signal
     }));
   } catch (e) {
@@ -47,26 +67,33 @@ async function cfRun(s, model, body, timeoutMs = 90000) {
   if (res.status === 429 || msg.includes('allocation') || msg.includes('neurons') || msg.includes('rate limit')) {
     throw new FriendlyError('A tinta mágica de hoje acabou! Amanhã ela enche de novo.', 'quota');
   }
-  if (msg.includes('nsfw') || msg.includes('safety') || msg.includes('flagged')) {
-    throw new FriendlyError('A IA não quis desenhar essa cena. Tente descrever de outro jeito.', 'safety');
+  if (msg.includes('flagged') || msg.includes('nsfw') || msg.includes('"code":3030')) {
+    throw new FriendlyError('A IA achou que esse desenho não combina com um livro infantil. Tente contar a cena de outro jeito.', 'safety');
   }
-  throw new FriendlyError(`A IA respondeu com um erro (${res.status}). Tente de novo daqui a pouco.`, 'server');
+  const err = new FriendlyError(`A IA respondeu com um erro (${res.status}). Tente de novo daqui a pouco.`, 'server');
+  err.detail = msg.slice(0, 300);
+  throw err;
 }
 
-async function chat(s, system, user, maxTokens = 600) {
+const cfJson = (s, model, body, timeoutMs = 90000) =>
+  cfFetch(s, model, JSON.stringify(body), { 'Content-Type': 'application/json' }, timeoutMs);
+
+// ---------- texto ----------
+async function chat(s, system, user, maxTokens = 600, extra = {}) {
   let lastErr;
-  for (const model of CF_TEXT_MODELS) {
+  for (const model of TEXT_MODELS) {
     try {
-      const r = await cfRun(s, model, {
+      const r = await cfJson(s, model, {
         messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
         max_tokens: maxTokens,
-        temperature: 0.3
+        temperature: 0.4,
+        ...extra
       }, 60000);
       const out = typeof r.response === 'string' ? r.response : JSON.stringify(r.response ?? '');
       if (out.trim()) return out.trim();
     } catch (e) {
       lastErr = e;
-      if (e.kind === 'auth' || e.kind === 'config' || e.kind === 'quota') throw e;
+      if (['auth', 'config', 'quota'].includes(e.kind)) throw e;
     }
   }
   throw lastErr || new FriendlyError('A IA de texto não respondeu.', 'server');
@@ -75,92 +102,166 @@ async function chat(s, system, user, maxTokens = 600) {
 function clean(s) { return String(s || '').replace(/^["'\s]+|["'\s]+$/g, '').replace(/\s+/g, ' ').trim(); }
 
 async function heroToEnglish(s, name, descPt) {
-  if (!descPt.trim()) return '';
+  if (!String(descPt || '').trim()) return '';
   const out = await chat(s,
     'Convert a Portuguese description of a story character into a concise English visual description for an image generator. ' +
-    'Max 45 words. Include body/species, apparent age, hair, face, clothing with colors and accessories. ' +
+    'Max 45 words. Include body/species, hair, face, clothing with colors and accessories. ' +
     'Keep every visual detail the author gave and invent nothing important. Never mention what is missing or not described. ' +
+    'Never use the words boy, girl, kid or child; for young characters write "young hero" or "young character". ' +
     'Output only the description, no preamble.',
     `Character name: ${name}\nDescription (Portuguese): ${descPt}`, 200);
-  return clean(out);
+  return safeWords(clean(out));
 }
 
-async function scenePrompt(s, book, page, prevText) {
-  return clean(await chat(s,
-    'You turn one page of a children\'s story into ONE prompt for an illustration. The author is a 10-year-old Brazilian kid and writes in Portuguese. ' +
-    'Write in English, max 60 words, describing only what is visible: the main character\'s action, pose and expression, the setting, other characters, lighting and camera angle. ' +
-    'Do not describe the main character\'s looks (that is added separately); call them "the main character". ' +
-    'Keep it suitable for children: cartoon action and fantasy battles are fine, but soften blood, gore, injuries or nudity. ' +
-    'Do not ask for text, letters or speech balloons. Output only the prompt.',
-    `Main character name: ${book.hero_name || 'the hero'}\n` +
-    (prevText ? `Previous page (context only): ${prevText.slice(-600)}\n` : '') +
-    `This page's story text: ${(page.text || '').slice(0, 1500) || '(empty)'}\n` +
-    `What the main character does in this picture: ${page.action || '(not specified, pick the key moment of the page)'}`, 220));
-}
-
-function finalPrompt(book, scene) {
-  const hero = book.hero_prompt_en || book.hero_desc;
-  const heroPart = hero ? ` The main character, ${book.hero_name || 'the hero'}, looks like this: ${hero}.` : '';
-  return `${scene}.${heroPart} Style: ${STYLES[book.style] || STYLES.manga_pb}.`.slice(0, 2000);
-}
-
-function fallbackScene(book, page) {
-  // Sem IA de texto: usa as palavras do próprio Vítor.
-  return clean(`${page.action || ''} ${(page.text || '').slice(0, 400)}`) || `${book.hero_name} in an adventure`;
-}
-
-async function cfImage(s, prompt, seed) {
-  const model = s.cf_image_model || DEFAULT_IMAGE_MODEL;
-  const steps = Math.min(8, Math.max(1, parseInt(s.cf_steps || '4', 10) || 4));
-  // O flux-1-schnell da Cloudflare recusa o campo "seed" (erro 5006); a consistência vem da ficha do herói.
-  const body = model === DEFAULT_IMAGE_MODEL ? { prompt, steps } : { prompt, steps, seed };
-  const r = await cfRun(s, model, body, 120000);
-  const b64 = r.image || r.result?.image;
-  if (!b64) throw new FriendlyError('A IA não devolveu a imagem. Tente de novo.', 'server');
-  return Buffer.from(b64, 'base64');
-}
-
-async function pollinationsImage(prompt, seed) {
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 1500))}` +
-    `?width=1024&height=1024&seed=${seed}&nologo=true&safe=true&model=flux`;
-  let res;
-  try {
-    res = await withTimeout(150000, signal => fetch(url, { signal }));
-  } catch (e) {
-    throw new FriendlyError('O desenhista reserva demorou demais. Tente de novo.', 'network');
-  }
-  const type = res.headers.get('content-type') || '';
-  if (res.status === 402 || res.status === 429) throw new FriendlyError('O desenhista reserva só faz 1 desenho por minuto. Espere um pouquinho e tente de novo.', 'quota');
-  if (!res.ok || !type.startsWith('image/')) throw new FriendlyError('O desenhista reserva está ocupado agora. Tente daqui a pouco.', 'server');
-  return { buffer: Buffer.from(await res.arrayBuffer()), ext: type.includes('png') ? 'png' : 'jpg' };
-}
-
-async function generateImage(s, book, page, prevText) {
-  let scene;
-  if (hasCloudflare(s)) {
-    try { scene = await scenePrompt(s, book, page, prevText); }
-    catch (e) { if (e.kind === 'auth') throw e; scene = fallbackScene(book, page); }
-  } else {
-    scene = fallbackScene(book, page);
-  }
-  const prompt = finalPrompt(book, scene);
-  const usePoll = s.use_pollinations === '1';
-
-  if (hasCloudflare(s)) {
-    let err;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try { return { buffer: await cfImage(s, prompt, book.seed), ext: 'jpg', prompt, source: 'cloudflare' }; }
-      catch (e) {
-        err = e;
-        if (['auth', 'quota', 'config', 'safety'].includes(e.kind)) break;
+const PLAN_SCHEMA = {
+  type: 'object',
+  properties: {
+    panels: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          scene: { type: 'string' },
+          hero: { type: 'boolean' },
+          narration: { type: 'string' },
+          dialogue: { type: 'array', items: { type: 'string' } },
+          sfx: { type: 'string' }
+        },
+        required: ['scene', 'hero', 'narration', 'dialogue', 'sfx']
       }
     }
-    if (!usePoll || err.kind === 'auth' || err.kind === 'safety') throw err;
-  } else if (!usePoll) {
-    throw new FriendlyError('A IA ainda não foi configurada. Peça para um adulto abrir a Área dos pais.', 'config');
+  },
+  required: ['panels']
+};
+
+const PLAN_SYSTEM = [
+  'You are a manga storyboard artist adapting ONE page written in Portuguese by a 10-year-old Brazilian author into manga panels.',
+  'Rules:',
+  '1. Use 2 panels for short pages (1-3 sentences), 3 for medium pages, 4 only for long pages with many events. Panels follow the text in order.',
+  '2. Adapt only what the text says. Do not invent new events.',
+  '3. scene (English, 25-45 words): a vivid image prompt with the action, pose, facial expression, the setting with background details, other characters with their looks, and a camera angle (close-up, wide shot, low angle, over the shoulder). ' +
+    'Call the protagonist "the main character" and do not describe their looks. Never use the words boy, girl, kid or child. Child-friendly: cartoon action is fine, no blood or gore. No text or speech balloons in the picture.',
+  '4. hero: true if the main character is visible.',
+  '5. narration (Portuguese): the narrator sentences of the text that belong to THIS panel, copied with the author\'s words (max 110 characters), or "".',
+  '6. dialogue (Portuguese): what characters say in THIS panel. Copy speech from the text exactly, without quotes or names. If the text has no speech, you may add one very short natural line. Max 2 lines.',
+  '7. sfx: a Portuguese manga sound effect for impacts or fast actions ("BUM!", "ZÁS!", "CRASH!", "VRUUM!", "PAF!"), or "".',
+  '8. Every sentence of the page must appear in some panel as narration or dialogue, in order.',
+  'Example for the page "O dragão acordou e cuspiu fogo na vila. Ana pegou o escudo e gritou: Para com isso!":',
+  '{"panels":[{"scene":"Wide shot of a medieval village at dawn, a huge green dragon wakes up on a hill and breathes a stream of fire toward thatched roofs, villagers running away","hero":false,"narration":"O dragão acordou e cuspiu fogo na vila.","dialogue":[],"sfx":"FUUUSH!"},' +
+    '{"scene":"Low angle shot of the main character raising a round wooden shield against the fire, determined angry expression, sparks and smoke all around","hero":true,"narration":"Ana pegou o escudo e gritou:","dialogue":["Para com isso!"],"sfx":""}]}',
+  'Reply with JSON only.'
+].join('\n');
+
+function parsePlan(out) {
+  let obj = out;
+  if (typeof out === 'string') {
+    const start = out.indexOf('{'), end = out.lastIndexOf('}');
+    if (start < 0 || end < start) return null;
+    try { obj = JSON.parse(out.slice(start, end + 1)); } catch (e) { return null; }
   }
-  const img = await pollinationsImage(prompt, book.seed);
-  return { ...img, prompt, source: 'pollinations' };
+  const panels = Array.isArray(obj?.panels) ? obj.panels : null;
+  if (!panels || !panels.length) return null;
+  return panels.slice(0, 4).map(p => ({
+    scene: safeWords(clean(p.scene)).slice(0, 400) || 'the main character in the scene',
+    hero: p.hero !== false,
+    narration: clean(p.narration).slice(0, 140),
+    dialogue: (Array.isArray(p.dialogue) ? p.dialogue : [p.dialogue]).map(clean).filter(Boolean).slice(0, 2).map(d => d.replace(/^[-–—]\s*/, '').slice(0, 110)),
+    sfx: clean(p.sfx).slice(0, 16)
+  }));
+}
+
+async function planPage(s, book, text, prevText) {
+  const user =
+    `Main character: ${book.hero_name || 'the hero'}\n` +
+    (prevText ? `Previous page (context only, do not adapt it): ${prevText.slice(-500)}\n` : '') +
+    `Page to adapt:\n${text.slice(0, 2500)}`;
+  let plan = parsePlan(await chat(s, PLAN_SYSTEM, user, 1600));
+  if (!plan) {
+    // Segunda tentativa com o modo JSON da Cloudflare, que garante o formato (mas escreve cenas mais curtas).
+    try { plan = parsePlan(await chat(s, PLAN_SYSTEM, user, 1600, { response_format: { type: 'json_schema', json_schema: PLAN_SCHEMA } })); }
+    catch (e) { if (['auth', 'config', 'quota'].includes(e.kind)) throw e; }
+  }
+  if (!plan) throw new FriendlyError('A IA se confundiu com essa página. Aperte de novo.', 'server');
+  return plan;
+}
+
+// ---------- desenho ----------
+async function klein(s, prompt, w, h, ref) {
+  const fd = new FormData();
+  fd.append('prompt', prompt.slice(0, 2000));
+  fd.append('width', String(w));
+  fd.append('height', String(h));
+  if (ref) fd.append('input_image_0', new Blob([ref], { type: 'image/jpeg' }), 'personagem.jpg');
+  const r = await cfFetch(s, KLEIN, fd, {}, 120000);
+  if (!r.image) throw new FriendlyError('A IA não devolveu o desenho. Tente de novo.', 'server');
+  return Buffer.from(r.image, 'base64');
+}
+async function schnell(s, prompt) {
+  const r = await cfJson(s, SCHNELL, { prompt: prompt.slice(0, 2000), steps: 4 }, 120000);
+  if (!r.image) throw new FriendlyError('A IA não devolveu o desenho. Tente de novo.', 'server');
+  return Buffer.from(r.image, 'base64');
+}
+
+// O filtro de segurança do klein barra quase todo rosto em estilo anime (testado em 2026-10-16),
+// então mangá vai direto para o schnell (sem imagem de referência, só a descrição detalhada).
+// Gibi e aquarela usam o klein com o personagem escolhido como referência.
+const usesKlein = style => style === 'gibi' || style === 'aquarela';
+
+async function draw(s, prompt, shape, ref, style) {
+  if (!usesKlein(style)) return schnell(s, `${prompt} Subject centered in the frame.`);
+  const { w, h } = SHAPES[shape] || SHAPES.wide;
+  try {
+    return await klein(s, prompt, w, h, ref);
+  } catch (e) {
+    if (!['safety', 'server', 'network'].includes(e.kind)) throw e;
+    return schnell(s, prompt);
+  }
+}
+
+// Uma IA que enxerga descreve o personagem escolhido, para o desenhista repetir as mesmas roupas e cores.
+async function describeHero(s, image) {
+  const r = await cfJson(s, '@cf/mistralai/mistral-small-3.1-24b-instruct', {
+    messages: [{ role: 'user', content: [
+      { type: 'text', text: 'Describe this character for an image generator so it can be drawn again identically: body type, hair (style, color), face, every clothing item with its colors, accessories. One paragraph, max 60 words, no preamble. Do not mention the background or the art style. Never use the words boy, girl, kid or child.' },
+      { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image.toString('base64')}` } }
+    ] }],
+    max_tokens: 220
+  }, 60000);
+  const text = r.response ?? r.choices?.[0]?.message?.content ?? r.description ?? '';
+  return safeWords(clean(typeof text === 'string' ? text : JSON.stringify(text)));
+}
+
+function heroLine(book) {
+  const hero = book.hero_prompt_en || safeWords(book.hero_desc);
+  return hero ? `${book.hero_name || 'The main character'}: ${hero}` : (book.hero_name || 'the hero');
+}
+
+function panelPrompt(book, panel, shape, hasRef) {
+  const style = STYLES[book.style] || STYLES.manga_pb;
+  const who = panel.hero
+    ? (hasRef
+      ? ` The main character is exactly the character from the reference image (same face, hair, clothes and colors). ${heroLine(book)}.`
+      : ` The main character, always drawn the same way: ${heroLine(book)}.`)
+    : '';
+  return `Manga panel, ${style}, ${SHAPES[shape].hint}. ${panel.scene}.${who} No text, no letters, no speech balloons.`;
+}
+
+async function drawPanel(s, book, panel, shape, ref) {
+  const hasRef = Boolean(ref && panel.hero && usesKlein(book.style));
+  return draw(s, panelPrompt(book, panel, shape, hasRef), shape, hasRef ? ref : null, book.style);
+}
+
+async function heroOptions(s, book) {
+  const style = STYLES[book.style] || STYLES.manga_pb;
+  const base = `Character design of one single character, full body, front view, standing in a confident pose, plain white background, ${style}, no text. Character ${heroLine(book)}.`;
+  const variants = [
+    `${base} Classic heroic design.`,
+    `${base} A different take on the same description, with a distinct hairstyle and outfit details.`
+  ];
+  const results = await Promise.allSettled(variants.map(p => draw(s, p, 'tall', null, book.style)));
+  const images = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+  if (!images.length) throw results[0].reason;
+  return images;
 }
 
 async function fixSpelling(s, text) {
@@ -173,8 +274,7 @@ async function fixSpelling(s, text) {
 }
 
 async function testConnection(s) {
-  const out = await chat(s, 'Responda apenas: ok', 'teste', 10);
-  return Boolean(out);
+  return Boolean(await chat(s, 'Responda apenas: ok', 'teste', 10));
 }
 
-module.exports = { generateImage, fixSpelling, heroToEnglish, testConnection, hasCloudflare, FriendlyError, STYLES };
+module.exports = { planPage, drawPanel, heroOptions, describeHero, heroToEnglish, fixSpelling, testConnection, hasCloudflare, FriendlyError, LAYOUTS, STYLES };

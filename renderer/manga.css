@@ -1,0 +1,94 @@
+/* ======================================================================
+   MANGÁ: página com quadrinhos, balões, narração e onomatopeias.
+   Letras em cqw (proporcionais à largura da página): tela, leitor e PDF ficam iguais.
+   ====================================================================== */
+.manga { container-type: inline-size; position: relative; background: #fff; padding: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.panel { position: relative; overflow: hidden; margin: 0; padding: 0; border: 3px solid #111; background: #E9EAEE; display: block; width: 100%; font: inherit; color: #111; text-align: left; }
+.panel.wide { grid-column: span 2; aspect-ratio: 3 / 2; }
+.panel.tall { aspect-ratio: 2 / 3; }
+.panel.splash { grid-column: span 2; aspect-ratio: 3 / 4; }
+.panel > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+/* O desenhista entrega quadrado; no quadrinho largo o corte privilegia a parte de cima (onde ficam as cabeças). */
+.panel.wide > img { object-position: 50% 22%; }
+.panel-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 10%; text-align: center; font-weight: 800; color: #6A6F84; font-size: 2.6cqw; background-image: radial-gradient(rgba(0,0,0,.08) 1.5px, transparent 1.6px); background-size: 9px 9px; }
+button.panel { cursor: pointer; }
+button.panel:hover { outline: 4px solid var(--magic); outline-offset: -4px; }
+.panel-edit { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); background: var(--magic); color: #fff; font-weight: 900; font-size: 13px; padding: 4px 12px; border-radius: 999px; opacity: 0; transition: opacity .15s; pointer-events: none; z-index: 3; }
+button.panel:hover .panel-edit, button.panel:focus-visible .panel-edit { opacity: 1; }
+
+.cap { position: absolute; top: 3%; left: 3%; max-width: 64%; background: #FFFBE8; border: 2px solid #111; padding: .45em .7em; font: 800 2.35cqw/1.3 var(--f-body); box-shadow: 3px 3px 0 #111; z-index: 1; }
+.tall .cap { max-width: 84%; font-size: 2.15cqw; }
+.bal { position: absolute; max-width: 56%; background: #fff; color: #111; border: 2.5px solid #111; border-radius: 50% / 44%; padding: .8em 1.15em; font: 800 2.55cqw/1.25 var(--f-body); text-align: center; z-index: 1; }
+.tall .bal { max-width: 86%; font-size: 2.3cqw; }
+.bal::before, .bal::after { content: ""; position: absolute; width: 0; height: 0; border-style: solid; }
+.bal.b0 { top: 4%; right: 4%; }
+.has-cap .bal.b0 { top: auto; bottom: 30%; }
+.tall.has-cap .bal.b0 { bottom: 34%; }
+.bal.b0::before { bottom: -15px; right: 26%; border-width: 15px 4px 0 12px; border-color: #111 transparent transparent transparent; }
+.bal.b0::after { bottom: -10px; right: calc(26% + 2px); border-width: 11px 3px 0 9px; border-color: #fff transparent transparent transparent; }
+.bal.b1 { bottom: 5%; left: 4%; }
+.bal.b1::before { top: -15px; left: 26%; border-width: 0 12px 15px 4px; border-color: transparent transparent #111 transparent; }
+.bal.b1::after { top: -10px; left: calc(26% + 2px); border-width: 0 9px 11px 3px; border-color: transparent transparent #fff transparent; }
+.bal.shout { border-radius: 10px; border-width: 3px; font-weight: 900; box-shadow: 0 0 0 3px #fff, 0 0 0 5px #111; }
+.sfx { position: absolute; right: 5%; bottom: 7%; font-family: var(--f-display); font-size: 8cqw; line-height: .9; letter-spacing: .04em; color: #fff; -webkit-text-stroke: .3cqw #111; paint-order: stroke fill; text-shadow: .45cqw .45cqw 0 #111; transform: rotate(-9deg); z-index: 2; pointer-events: none; }
+.sfx.mid { bottom: auto; top: 40%; }
+.tall .sfx { font-size: 6.6cqw; }
+.manga[data-style="manga_cor"] .sfx, .manga[data-style="gibi"] .sfx { color: #FFD23F; }
+.folio { position: absolute; bottom: -2px; right: 16px; font-family: var(--f-display); font-size: 2.4cqw; color: #999; }
+.manga-empty { display: grid; justify-items: center; gap: 10px; padding: 70px 30px; text-align: center; color: var(--muted); border: 3px dashed #B9BECC; border-radius: 18px; line-height: 1.5; background: var(--surface); }
+.manga-empty svg { width: 56px; height: 56px; color: #C5CAD9; }
+.manga-empty b { color: var(--ink); font-size: 19px; }
+
+/* capa */
+.cover-sheet { container-type: inline-size; color: #fff; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 4cqw; padding: 6%; background-color: var(--ink); background-image: radial-gradient(rgba(255,255,255,.08) 1.5px, transparent 1.6px); background-size: 10px 10px; }
+.cover-sheet img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; object-position: top; background: #fff; border: 6px solid #fff; transform: rotate(-2deg); box-shadow: 0 20px 40px rgba(0,0,0,.4); }
+.cover-words { display: grid; gap: 2cqw; }
+.cover-words h2 { margin: 0; font-family: var(--f-display); font-weight: 400; font-size: 8cqw; line-height: .95; letter-spacing: .05em; overflow-wrap: anywhere; }
+.cover-words p { margin: 0; font-weight: 900; font-size: 1.8cqw; letter-spacing: .22em; text-transform: uppercase; color: #FF8A4C; }
+
+/* editor de mangá */
+.write-card { display: grid; gap: 14px; }
+.write-card .story { min-height: 300px; }
+.stale { margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--accent-soft); color: var(--accent-dark); font-weight: 800; font-size: 14px; }
+.hint.center { text-align: center; }
+.stage { position: relative; padding: 16px; display: grid; gap: 10px; background: #D9DCE5; }
+.stage .drawing { border-radius: var(--radius); }
+.drawing .small { font-size: 13px; }
+.progress { width: min(320px, 80%); height: 12px; border-radius: 99px; background: #E3E7FF; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 6%; background: var(--magic); border-radius: 99px; transition: width .4s ease; }
+button.ed-thumb { border: 0; padding: 0; cursor: pointer; display: grid; place-items: center; color: #fff; font-family: var(--f-display); font-size: 28px; }
+.ed-thumb img { background: #fff; object-position: top; }
+.panel-modal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.panel-preview { border: 3px solid #111; background: var(--sunken); min-height: 200px; display: grid; place-items: center; color: var(--muted); font-weight: 800; }
+.panel-preview img { width: 100%; display: block; }
+.textarea.small { min-height: 70px; }
+.diff-col { display: grid; gap: 8px; align-content: start; }
+
+/* escolha do personagem */
+.hero-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.hero-form { display: grid; gap: 16px; }
+.hero-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.hero-opt { position: relative; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; display: grid; }
+.hero-opt img { width: 100%; height: min(56vh, 540px); object-fit: contain; background: #fff; display: block; }
+.hero-opt.loading { height: calc(min(56vh, 540px) + 72px); }
+.hero-opt-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }
+.hero-opt-foot b { font-family: var(--f-display); font-weight: 400; font-size: 26px; letter-spacing: 1px; }
+.hero-empty { grid-column: span 2; }
+.hero-current { max-width: 240px; border-radius: 16px; background: #fff; }
+.hero-chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 14px 4px 4px; }
+.hero-chip img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; object-position: top; background: #fff; }
+
+/* leitor */
+.reader-stage { max-width: 780px; width: 100%; margin: 0 auto; box-shadow: 0 30px 60px -30px rgba(27,31,46,.5); }
+
+@media (max-width: 1000px) {
+  .hero-layout, .panel-modal { grid-template-columns: minmax(0, 1fr); }
+  .cover-sheet { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* impressão (PDF) */
+body.print { background: #fff; display: block; height: auto; }
+@page { size: A4; margin: 0; }
+.print .sheet { width: 210mm; height: 296mm; padding: 8mm; display: flex; align-items: center; justify-content: center; page-break-after: always; break-after: page; overflow: hidden; }
+.print .manga { width: 178mm; }
+.print .cover-sheet { width: 194mm; height: 280mm; }

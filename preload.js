@@ -9,17 +9,25 @@ contextBridge.exposeInMainWorld('editora', {
   updateBook: (id, fields) => call('books:update', id, fields),
   deleteBook: id => call('books:delete', id),
   heroes: () => call('books:heroes'),
+  heroOptions: bookId => call('hero:options', bookId),
+  heroChoose: (bookId, rel) => call('hero:choose', bookId, rel),
   addPage: bookId => call('pages:add', bookId),
   updatePage: (id, fields) => call('pages:update', id, fields),
   deletePage: id => call('pages:delete', id),
   movePage: (id, dir) => call('pages:move', id, dir),
-  clearImage: id => call('pages:clearImage', id),
-  draw: pageId => call('ai:draw', pageId),
+  makeManga: pageId => call('page:manga', pageId),
+  redrawPanel: (pageId, idx) => call('panel:redraw', pageId, idx),
+  updatePanel: (pageId, idx, fields) => call('panel:update', pageId, idx, fields),
+  onProgress: fn => {
+    const listener = (_e, data) => fn(data);
+    ipcRenderer.on('manga:progress', listener);
+    return () => ipcRenderer.removeListener('manga:progress', listener);
+  },
   spelling: text => call('ai:spelling', text),
   getSettings: () => call('settings:get'),
   saveSettings: data => call('settings:save', data),
   checkPin: pin => call('settings:checkPin', pin),
   testAi: data => call('settings:test', data),
   openDataFolder: () => call('app:openDataFolder'),
-  exportPdf: id => call('book:exportPdf', id)
+  exportPdf: (id, html) => call('book:exportPdf', id, html)
 });

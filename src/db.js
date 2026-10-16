@@ -32,7 +32,15 @@ CREATE TABLE IF NOT EXISTS pages (
 CREATE INDEX IF NOT EXISTS pages_book ON pages(book_id, position);
 `;
 
-const BOOK_FIELDS = ['title', 'hero_name', 'hero_desc', 'hero_prompt_en', 'style', 'status', 'current_page'];
+// Colunas adicionadas depois da primeira versão (mangá com quadrinhos e personagem de referência).
+const MIGRATIONS = [
+  ['books', 'hero_ref', 'TEXT'],
+  ['books', 'hero_options', 'TEXT'],
+  ['pages', 'panels_json', 'TEXT'],
+  ['pages', 'panels_text', 'TEXT']
+];
+
+const BOOK_FIELDS = ['title', 'hero_name', 'hero_desc', 'hero_prompt_en', 'style', 'status', 'current_page', 'hero_ref', 'hero_options'];
 const PAGE_FIELDS = ['text', 'action'];
 const now = () => new Date().toISOString();
 
@@ -49,6 +57,10 @@ class Store {
     this.db = fs.existsSync(this.file) ? new SQL.Database(fs.readFileSync(this.file)) : new SQL.Database();
     this.db.run('PRAGMA foreign_keys = ON;');
     this.db.run(SCHEMA);
+    for (const [table, col, type] of MIGRATIONS) {
+      const cols = this.all(`PRAGMA table_info(${table})`).map(c => c.name);
+      if (!cols.includes(col)) this.run(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+    }
     this.flush();
     this.dailyBackup();
   }
@@ -96,11 +108,16 @@ class Store {
 
   // ---------- livros ----------
   listBooks() {
-    return this.all(`
-      SELECT b.*,
-        (SELECT COUNT(*) FROM pages p WHERE p.book_id = b.id) AS page_count,
-        (SELECT p.image_file FROM pages p WHERE p.book_id = b.id AND p.image_file IS NOT NULL ORDER BY p.position LIMIT 1) AS cover
+    const books = this.all(`
+      SELECT b.*, (SELECT COUNT(*) FROM pages p WHERE p.book_id = b.id) AS page_count
       FROM books b ORDER BY b.updated_at DESC`);
+    for (const b of books) {
+      const first = this.all('SELECT panels_json FROM pages WHERE book_id = ? AND panels_json IS NOT NULL ORDER BY position', [b.id])
+        .map(p => parsePanels(p.panels_json).find(x => x.image_file))
+        .find(Boolean);
+      b.cover = first ? first.image_file : (b.hero_ref || null);
+    }
+    return books;
   }
   createBook({ title, hero_name, hero_desc, hero_prompt_en = '', style }) {
     const t = now();
@@ -115,7 +132,8 @@ class Store {
   getBook(id) {
     const book = this.get('SELECT * FROM books WHERE id = ?', [id]);
     if (!book) return null;
-    book.pages = this.all('SELECT * FROM pages WHERE book_id = ? ORDER BY position', [id]);
+    book.pages = this.all('SELECT * FROM pages WHERE book_id = ? ORDER BY position', [id]).map(withPanels);
+    book.hero_options = book.hero_options ? JSON.parse(book.hero_options) : [];
     return book;
   }
   updateBook(id, fields) {
@@ -134,7 +152,31 @@ class Store {
   }
 
   // ---------- páginas ----------
-  getPage(id) { return this.get('SELECT * FROM pages WHERE id = ?', [id]); }
+  getPage(id) { const p = this.get('SELECT * FROM pages WHERE id = ?', [id]); return p && withPanels(p); }
+
+  // Troca todos os quadrinhos da página; apaga do disco os desenhos que não são mais usados.
+  setPanels(pageId, panels, sourceText) {
+    const old = this.getPage(pageId);
+    this.run('UPDATE pages SET panels_json = ?, panels_text = ?, updated_at = ? WHERE id = ?',
+      [JSON.stringify(panels), sourceText, now(), pageId]);
+    this.touchBook(old.book_id);
+    this.flush();
+    const keep = new Set(panels.map(p => p.image_file).filter(Boolean));
+    for (const p of old.panels) if (p.image_file && !keep.has(p.image_file)) this.removeImageFile(p.image_file);
+    return this.getPage(pageId);
+  }
+  updatePanel(pageId, idx, fields) {
+    const page = this.getPage(pageId);
+    const panels = page.panels;
+    if (!panels[idx]) return page;
+    const before = panels[idx].image_file;
+    for (const k of ['narration', 'dialogue', 'sfx', 'scene', 'image_file', 'error']) if (k in fields) panels[idx][k] = fields[k];
+    this.run('UPDATE pages SET panels_json = ?, updated_at = ? WHERE id = ?', [JSON.stringify(panels), now(), pageId]);
+    this.touchBook(page.book_id);
+    this.flush();
+    if (before && before !== panels[idx].image_file) this.removeImageFile(before);
+    return this.getPage(pageId);
+  }
   addPage(bookId) {
     const t = now();
     const max = this.get('SELECT COALESCE(MAX(position), -1) AS m FROM pages WHERE book_id = ?', [bookId]).m;
@@ -179,6 +221,7 @@ class Store {
     this.touchBook(p.book_id);
     this.flush();
     if (p.image_file) this.removeImageFile(p.image_file);
+    for (const panel of p.panels) if (panel.image_file) this.removeImageFile(panel.image_file);
   }
   movePage(id, direction) {
     const p = this.getPage(id);
@@ -192,10 +235,10 @@ class Store {
   }
 
   // ---------- imagens ----------
-  saveImage(bookId, pageId, buffer, ext = 'jpg') {
+  saveImage(bookId, name, buffer, ext = 'jpg') {
     const dir = path.join(this.imagesDir, String(bookId));
     fs.mkdirSync(dir, { recursive: true });
-    const rel = `${bookId}/${pageId}-${Date.now()}.${ext}`;
+    const rel = `${bookId}/${name}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
     fs.writeFileSync(path.join(this.imagesDir, rel), buffer);
     return rel;
   }
@@ -209,5 +252,10 @@ class Store {
     if (full) fs.rmSync(full, { force: true });
   }
 }
+
+function parsePanels(json) {
+  try { const v = JSON.parse(json || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+}
+function withPanels(p) { p.panels = parsePanels(p.panels_json); delete p.panels_json; return p; }
 
 module.exports = { Store };
