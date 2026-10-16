@@ -1,0 +1,777 @@
+'use strict';
+/* Editora do Vítor: telas da Biblioteca, Novo livro, Editor, Leitor e Área dos pais. */
+
+const API = window.editora;
+const $view = document.getElementById('view');
+
+// ---------- ícones (traço simples, herdam a cor) ----------
+const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICON = {
+  gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+  plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  back: svg('<path d="M19 12H5M12 19l-7-7 7-7"/>'),
+  left: svg('<path d="M15 18l-6-6 6-6"/>'),
+  right: svg('<path d="M9 18l6-6-6-6"/>'),
+  wand: svg('<path d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8l1.4 1.4M17.8 6.2l1.4-1.4M12.2 6.2l-1.4-1.4"/><path d="M15 9l-12 12"/>'),
+  trash: svg('<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/>'),
+  redo: svg('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'),
+  check: svg('<path d="M20 6L9 17l-5-5"/>'),
+  image: svg('<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/>'),
+  spell: svg('<path d="M4 16l4-10 4 10M5.5 12.5h5M14 17l2.5 2.5L21 14"/>'),
+  user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+  pdf: svg('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 18v-6M9 15l3 3 3-3"/>'),
+  read: svg('<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/>'),
+  pen: svg('<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
+  star: svg('<path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>'),
+  folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>')
+};
+
+const STYLES = [
+  { id: 'manga_pb', name: 'Mangá preto e branco', desc: 'Traço forte, retícula, cara de mangá japonês.' },
+  { id: 'manga_cor', name: 'Mangá colorido', desc: 'Estilo anime, cores vivas.' },
+  { id: 'aquarela', name: 'Aquarela', desc: 'Igual ao livro da Lanchonete: contorno e pintura suave.' },
+  { id: 'gibi', name: 'Gibi', desc: 'Desenho animado, cores chapadas e divertidas.' }
+];
+const styleName = id => (STYLES.find(s => s.id === id) || STYLES[0]).name;
+
+// ---------- utilidades de tela ----------
+function el(tag, props = {}, ...children) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') n.className = v;
+    else if (k === 'text') n.textContent = v;
+    else if (k === 'icon') n.insertAdjacentHTML('afterbegin', ICON[v]);
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2).toLowerCase(), v);
+    else if (k === 'value') n.value = v;
+    else n.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of children.flat()) {
+    if (c == null || c === false) continue;
+    n.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return n;
+}
+const btn = (label, cls, onClick, icon, extra = {}) => el('button', { type: 'button', class: `btn ${cls}`, onClick, icon, ...extra }, label);
+const imgSrc = rel => `img://local/${rel.split('/').map(encodeURIComponent).join('/')}`;
+
+let toastTimer;
+function toast(msg, kind = '', ms = 4200) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `show ${kind}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = kind; }, ms);
+}
+
+async function call(name, ...args) {
+  const r = await API[name](...args);
+  if (!r.ok) {
+    toast(r.error, 'error', 6500);
+    const e = new Error(r.error); e.kind = r.kind; e.shown = true;
+    throw e;
+  }
+  return r.data;
+}
+async function callQuiet(name, ...args) { return API[name](...args); }
+
+async function busy(button, fn, label) {
+  const old = button.textContent;
+  button.classList.add('loading');
+  if (label) button.lastChild.textContent = label;
+  try { return await fn(); }
+  catch (e) { if (!e.shown) { console.error(e); toast('Algo deu errado. Tente de novo.', 'error'); } }
+  finally {
+    if (button.isConnected) { button.classList.remove('loading'); if (label) button.lastChild.textContent = old; }
+  }
+}
+
+// ---------- janelas ----------
+function openModal({ title, body, actions = [], wide = false, onClose }) {
+  const root = document.getElementById('modalRoot');
+  const prevFocus = document.activeElement;
+  const box = el('div', { class: `modal${wide ? ' wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title });
+  const back = el('div', { class: 'modal-back' }, box);
+  const close = () => {
+    back.remove();
+    document.removeEventListener('keydown', onKey, true);
+    if (onClose) onClose();
+    if (prevFocus && prevFocus.isConnected) prevFocus.focus();
+  };
+  const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  document.addEventListener('keydown', onKey, true);
+  back.addEventListener('mousedown', e => { if (e.target === back) close(); });
+  box.append(el('h2', { text: title }));
+  if (body) box.append(...[].concat(body));
+  if (actions.length) {
+    box.append(el('div', { class: 'modal-foot' }, actions.map(a => btn(a.label, a.kind || 'btn-ghost', async ev => {
+      if (a.onClick) {
+        const r = await a.onClick(ev, close);
+        if (r === false) return;
+      }
+      if (a.close !== false) close();
+    }, a.icon))));
+  }
+  root.append(back);
+  const first = box.querySelector('input, textarea, .modal-foot .btn:last-child');
+  if (first) first.focus();
+  return { close, box };
+}
+function confirmBox(title, text, okLabel, danger = true) {
+  return new Promise(resolve => {
+    let answered = false;
+    openModal({
+      title, body: el('p', { text }),
+      onClose: () => { if (!answered) resolve(false); },
+      actions: [
+        { label: 'Cancelar', kind: 'btn-ghost', onClick: () => { answered = true; resolve(false); } },
+        { label: okLabel, kind: danger ? 'btn-danger' : 'btn-primary', onClick: () => { answered = true; resolve(true); } }
+      ]
+    });
+  });
+}
+
+// ---------- navegação ----------
+const S = { settings: null, cleanup: [] };
+
+async function go(view, params = {}) {
+  if (S.flush) await S.flush();
+  S.cleanup.forEach(fn => fn());
+  S.cleanup = [];
+  S.flush = null;
+  $view.replaceChildren();
+  $view.scrollTop = 0;
+  try {
+    if (view === 'library') await renderLibrary();
+    else if (view === 'new') await renderNew();
+    else if (view === 'editor') await renderEditor(params.id);
+    else if (view === 'reader') await renderReader(params.id, params.at || 0);
+    else if (view === 'settings') await renderSettings();
+  } catch (e) {
+    if (!e.shown) { console.error(e); toast('Não consegui abrir essa tela. Tente de novo.', 'error'); }
+    if (view !== 'library') go('library');
+  }
+}
+
+document.getElementById('brand').addEventListener('click', () => go('library'));
+const settingsBtn = document.getElementById('settingsBtn');
+settingsBtn.innerHTML = ICON.gear;
+settingsBtn.addEventListener('click', openParents);
+
+// ======================================================================
+// BIBLIOTECA
+// ======================================================================
+async function renderLibrary() {
+  const [books, settings] = await Promise.all([call('listBooks'), call('getSettings')]);
+  S.settings = settings;
+  const drafts = books.filter(b => b.status !== 'published');
+  const done = books.filter(b => b.status === 'published');
+
+  const wrap = el('div', { class: 'wrap' });
+  wrap.append(el('div', { class: 'lib-head' },
+    el('div', { class: 'field' },
+      el('h1', { class: 'display', text: 'Biblioteca Mágica' }),
+      el('p', { class: 'lead', text: books.length ? 'Escolha um livro para continuar ou comece uma história nova.' : 'Toda grande coleção começa com um livro.' })),
+    btn('Novo livro', 'btn-primary btn-big', () => go('new'), 'plus')));
+
+  if (!settings.ai_ready) {
+    wrap.append(el('div', { class: 'banner' },
+      el('span', { text: settings.use_pollinations
+        ? 'Os desenhos estão usando o desenhista reserva. Para ligar a IA principal e o corretor de ortografia, um adulto precisa configurar a Área dos pais.'
+        : 'A IA ainda não foi configurada. Um adulto precisa abrir a Área dos pais.' }),
+      btn('Área dos pais', 'btn-ghost', openParents, 'gear')));
+  }
+
+  if (!books.length) {
+    wrap.append(el('div', { class: 'empty' },
+      el('p', { class: 'display', text: 'Sua estante está vazia' }),
+      el('p', { class: 'lead', text: 'Crie um herói, escreva a primeira página e deixe a IA desenhar.' }),
+      btn('Criar meu primeiro livro', 'btn-primary btn-big', () => go('new'), 'plus')));
+  }
+  if (drafts.length) wrap.append(el('h2', { class: 'section', icon: 'pen' }, 'Em curso'), shelf(drafts));
+  if (done.length) wrap.append(el('h2', { class: 'section', icon: 'star' }, 'Publicados'), shelf(done));
+  $view.append(wrap);
+}
+
+function shelf(books) {
+  return el('div', { class: 'shelf' }, books.map(b => {
+    const published = b.status === 'published';
+    const open = () => go(published ? 'reader' : 'editor', { id: b.id });
+    const cover = el('button', { type: 'button', class: 'cover', onClick: open, 'aria-label': `Abrir ${b.title}` },
+      b.cover ? el('img', { src: imgSrc(b.cover), alt: '' }) : el('div', { class: 'cover-empty', text: b.title }),
+      published ? el('span', { class: 'pill ok badge', text: 'Publicado' }) : null);
+    const del = el('button', { type: 'button', class: 'icon-btn', title: 'Apagar livro', 'aria-label': `Apagar ${b.title}` });
+    del.innerHTML = ICON.trash;
+    del.addEventListener('click', async () => {
+      if (await confirmBox('Apagar este livro?', `"${b.title}" e todos os desenhos dele vão sumir para sempre.`, 'Apagar para sempre')) {
+        await call('deleteBook', b.id);
+        toast('Livro apagado.');
+        go('library');
+      }
+    });
+    return el('article', { class: 'book' },
+      cover,
+      el('h3', { class: 'book-title', text: b.title }),
+      el('p', { class: 'book-meta', text: `${b.page_count} ${b.page_count === 1 ? 'página' : 'páginas'} · ${styleName(b.style)}` }),
+      el('div', { class: 'book-actions' },
+        published ? btn('Ler', 'btn-soft', open, 'read') : btn('Continuar', 'btn-soft', open, 'pen'),
+        published ? btn('Editar', 'btn-ghost', () => go('editor', { id: b.id })) : btn('Ler', 'btn-ghost', () => go('reader', { id: b.id })),
+        del));
+  }));
+}
+
+// ======================================================================
+// NOVO LIVRO
+// ======================================================================
+async function renderNew() {
+  const heroes = await call('heroes');
+  const f = { style: 'manga_pb' };
+
+  const title = el('input', { class: 'input', id: 'nb-title', maxlength: 80, placeholder: 'Ex.: Lanchonete monstruosa 3', autocomplete: 'off' });
+  const heroName = el('input', { class: 'input', id: 'nb-hero', maxlength: 40, placeholder: 'Ex.: Lary, o entregador', autocomplete: 'off' });
+  const heroDesc = el('textarea', { class: 'textarea', id: 'nb-desc', maxlength: 600, placeholder: 'Ex.: metade homem, metade cachorro. Orelhas pontudas, focinho, pelo marrom, capa vermelha e tênis azul. Muito corajoso.' });
+  const create = btn('Começar a escrever', 'btn-primary btn-big', null, 'pen');
+  const check = () => { create.disabled = !(title.value.trim() && heroName.value.trim()); };
+  [title, heroName].forEach(i => i.addEventListener('input', check));
+  check();
+
+  const styleBtns = STYLES.map(s => el('button', {
+    type: 'button', class: 'style-opt', 'aria-pressed': String(s.id === f.style),
+    onClick: e => { f.style = s.id; styleBtns.forEach(b => b.setAttribute('aria-pressed', String(b === e.currentTarget))); }
+  }, el('div', { class: `swatch sw-${s.id}` }), el('b', { text: s.name }), el('small', { text: s.desc })));
+
+  create.addEventListener('click', () => busy(create, async () => {
+    const id = await call('createBook', { title: title.value.trim(), hero_name: heroName.value.trim(), hero_desc: heroDesc.value.trim(), style: f.style });
+    go('editor', { id });
+  }, 'Preparando o livro...'));
+
+  const step = (n, h, ...body) => el('div', { class: 'step' }, el('div', { class: 'step-num', text: n }), el('div', { class: 'step-body' }, el('h3', { text: h }), ...body));
+
+  $view.append(el('div', { class: 'wrap' },
+    el('div', { class: 'lib-head' }, el('h1', { class: 'display', text: 'Novo livro' }), btn('Voltar', 'btn-ghost', () => go('library'), 'back')),
+    el('div', { class: 'card form-card' },
+      step('1', 'Qual é o nome do livro?', title),
+      step('2', 'Quem é o herói?',
+        el('label', { class: 'field' }, el('span', { text: 'Nome do herói' }), heroName),
+        el('label', { class: 'field' }, el('span', { text: 'Como ele é? Escreva do seu jeito' }), heroDesc),
+        el('p', { class: 'hint', text: 'Quanto mais detalhes (cor do cabelo, roupa, acessórios), mais parecido ele sai em todos os desenhos.' }),
+        heroes.length ? el('div', { class: 'field' },
+          el('span', { text: 'Ou chame um herói que já existe' }),
+          el('div', { class: 'chips' }, heroes.map(h => el('button', {
+            type: 'button', class: 'chip', title: `Do livro "${h.from}"`,
+            onClick: () => { heroName.value = h.hero_name; heroDesc.value = h.hero_desc; check(); }
+          }, h.hero_name)))) : null),
+      step('3', 'Como vão ser os desenhos?', el('div', { class: 'styles' }, styleBtns)),
+      el('div', { class: 'form-foot' }, create))));
+  title.focus();
+}
+
+// ======================================================================
+// EDITOR
+// ======================================================================
+async function renderEditor(id) {
+  const book = await call('getBook', id);
+  const E = { book, idx: Math.min(Math.max(0, book.current_page || 0), book.pages.length - 1) };
+  const drawing = S.drawing || (S.drawing = new Set());
+  const page = () => E.book.pages[E.idx];
+
+  // ----- salvamento automático -----
+  const pending = new Map();
+  let timer = null, saveState = 'saved';
+  const statusPill = el('span', { class: 'pill ok' });
+  const setStatus = st => {
+    saveState = st;
+    statusPill.className = `pill ${st === 'saved' ? 'ok' : st === 'error' ? 'err' : 'warn'}`;
+    statusPill.textContent = st === 'saved' ? 'Tudo salvo' : st === 'error' ? 'Não salvou, tentando de novo...' : 'Salvando...';
+  };
+  setStatus('saved');
+  const flush = async () => {
+    clearTimeout(timer); timer = null;
+    if (!pending.size) return;
+    const jobs = [...pending.entries()];
+    pending.clear();
+    try {
+      for (const [pid, fields] of jobs) await call('updatePage', pid, fields);
+      if (!pending.size) setStatus('saved');
+    } catch (e) {
+      for (const [pid, fields] of jobs) pending.set(pid, { ...fields, ...(pending.get(pid) || {}) });
+      setStatus('error');
+      timer = setTimeout(flush, 3000);
+    }
+  };
+  const queue = (pid, fields) => {
+    pending.set(pid, { ...(pending.get(pid) || {}), ...fields });
+    setStatus('saving');
+    clearTimeout(timer);
+    timer = setTimeout(flush, 600);
+  };
+  S.flush = flush;
+  const onUnload = e => { if (pending.size) { e.returnValue = false; flush().then(() => window.close()); } };
+  window.addEventListener('beforeunload', onUnload);
+  S.cleanup.push(() => window.removeEventListener('beforeunload', onUnload));
+
+  let pageSaveTimer;
+  const rememberPage = () => {
+    clearTimeout(pageSaveTimer);
+    pageSaveTimer = setTimeout(() => callQuiet('updateBook', E.book.id, { current_page: E.idx }), 400);
+  };
+
+  const reload = async () => {
+    await flush();
+    const fresh = await call('getBook', E.book.id);
+    E.book = fresh;
+    E.idx = Math.min(E.idx, fresh.pages.length - 1);
+  };
+
+  // ----- cabeçalho -----
+  const head = el('div', { class: 'card ed-head' });
+  function paintHead() {
+    const b = E.book;
+    const cover = b.pages.find(p => p.image_file);
+    const titleBtn = el('button', { type: 'button', title: 'Mudar o nome do livro', onClick: editTitle }, b.title);
+    head.replaceChildren(
+      btn('Biblioteca', 'btn-ghost', () => go('library'), 'back'),
+      el('div', { class: 'ed-thumb' }, cover ? el('img', { src: imgSrc(cover.image_file), alt: '' }) : null),
+      el('div', { class: 'ed-title' }, titleBtn,
+        el('div', { class: 'meta' }, el('span', { class: 'pill', text: styleName(b.style) }), statusPill)),
+      el('div', { class: 'ed-tools' },
+        btn(`Ficha do ${b.hero_name || 'herói'}`, 'btn-ghost', editHero, 'user'),
+        btn('Ler', 'btn-ghost', async () => { await flush(); go('reader', { id: b.id, at: E.idx + 1 }); }, 'read'),
+        b.status === 'published'
+          ? el('span', { class: 'pill ok', text: 'Publicado' })
+          : btn('Publicar', 'btn-ok', publish, 'check')));
+  }
+
+  // ----- escrita -----
+  const pageLabel = el('span', { class: 'display' });
+  const story = el('textarea', { class: 'story', id: 'story', spellcheck: 'true', placeholder: 'Era uma vez...' });
+  story.addEventListener('input', () => { page().text = story.value; queue(page().id, { text: story.value }); });
+  story.addEventListener('blur', flush);
+  const spellBtn = btn('Corrigir ortografia', 'btn-soft', null, 'spell');
+  spellBtn.addEventListener('click', () => busy(spellBtn, spelling, 'Conferindo...'));
+  const writeCard = el('div', { class: 'card' },
+    el('div', { class: 'write-head' }, pageLabel, spellBtn),
+    story);
+
+  const actionLabel = el('span');
+  const action = el('textarea', { class: 'textarea', id: 'action', maxlength: 400, placeholder: 'Ex.: ele pula do telhado segurando a pizza enquanto a bruxa joga um raio verde' });
+  action.addEventListener('input', () => { page().action = action.value; queue(page().id, { action: action.value }); });
+  action.addEventListener('blur', flush);
+  const drawBtn = btn('Desenhar esta página', 'btn-magic btn-big', () => drawPage(page()), 'wand');
+  const actionCard = el('div', { class: 'card action-card' },
+    el('label', { class: 'field' }, actionLabel, action),
+    drawBtn);
+
+  // ----- desenho -----
+  const art = el('div', { class: 'art' });
+  const artCard = el('div', { class: 'card' }, art);
+  function paintArt() {
+    const p = page();
+    art.replaceChildren();
+    if (p.image_file) {
+      const redo = el('button', { type: 'button', class: 'icon-btn', title: 'Desenhar de novo', 'aria-label': 'Desenhar de novo', onClick: () => drawPage(p) });
+      redo.innerHTML = ICON.redo;
+      const del = el('button', { type: 'button', class: 'icon-btn del', title: 'Apagar desenho', 'aria-label': 'Apagar desenho', onClick: () => clearArt(p) });
+      del.innerHTML = ICON.trash;
+      art.append(el('img', { src: imgSrc(p.image_file), alt: `Desenho da página ${E.idx + 1}` }), el('div', { class: 'art-tools' }, redo, del));
+    } else {
+      const empty = el('div', { class: 'art-empty' });
+      empty.innerHTML = ICON.image;
+      empty.append(el('span', { text: 'O desenho desta página aparece aqui. Escreva o que acontece e aperte o botão azul.' }));
+      art.append(empty);
+    }
+    if (drawing.has(p.id)) {
+      art.append(el('div', { class: 'drawing' }, el('b', { text: 'Desenhando...' }), el('span', { text: 'Isso leva uns 20 segundos. Pode continuar escrevendo!' })));
+    }
+    drawBtn.disabled = drawing.has(p.id);
+    drawBtn.lastChild.textContent = p.image_file ? 'Desenhar de novo' : 'Desenhar esta página';
+  }
+
+  // ----- paginação -----
+  const prevBtn = el('button', { type: 'button', class: 'round', 'aria-label': 'Página anterior', onClick: () => goPage(E.idx - 1) });
+  prevBtn.innerHTML = ICON.left;
+  const nextBtn = el('button', { type: 'button', class: 'round', 'aria-label': 'Próxima página', onClick: () => goPage(E.idx + 1) });
+  nextBtn.innerHTML = ICON.right;
+  const num = el('div', { class: 'num' });
+  const pager = el('div', { class: 'card pager' }, prevBtn, num, nextBtn);
+  const pageTools = el('div', { class: 'page-tools' },
+    btn('Página nova', 'btn-primary', addPage, 'plus'),
+    btn('Mover para trás', 'btn-ghost', () => movePage(-1), 'left'),
+    btn('Mover para frente', 'btn-ghost', () => movePage(1), 'right'),
+    btn('Apagar página', 'btn-danger', deletePage, 'trash'));
+  function paintPager() {
+    const n = E.book.pages.length;
+    num.replaceChildren(String(E.idx + 1), el('small', { text: `de ${n}` }));
+    prevBtn.disabled = E.idx === 0;
+    nextBtn.disabled = E.idx >= n - 1;
+    pageTools.children[1].disabled = E.idx === 0;
+    pageTools.children[2].disabled = E.idx >= n - 1;
+  }
+
+  const strip = el('div', { class: 'strip', 'aria-label': 'Todas as páginas' });
+  function paintStrip() {
+    strip.replaceChildren(...E.book.pages.map((p, i) => el('button', {
+      type: 'button', class: 'thumb', 'aria-current': String(i === E.idx), onClick: () => goPage(i), title: `Página ${i + 1}`
+    }, el('div', { class: `t${drawing.has(p.id) ? ' busy' : ''}` }, p.image_file ? el('img', { src: imgSrc(p.image_file), alt: '' }) : String(i + 1)), `Página ${i + 1}`)),
+    el('button', { type: 'button', class: 'thumb add', onClick: addPage, title: 'Página nova' }, el('div', { class: 't', text: '+' }), 'Nova'));
+    const cur = strip.children[E.idx];
+    if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  function paintPage() {
+    const p = page();
+    pageLabel.textContent = `Página ${E.idx + 1}`;
+    story.value = p.text || '';
+    action.value = p.action || '';
+    actionLabel.textContent = `O que ${E.book.hero_name ? 'o ' + E.book.hero_name : 'o herói'} faz nesta página?`;
+    paintArt(); paintPager(); paintStrip();
+  }
+
+  // ----- ações -----
+  async function goPage(i) {
+    if (i < 0 || i >= E.book.pages.length || i === E.idx) return;
+    await flush();
+    E.idx = i;
+    paintPage();
+    rememberPage();
+    story.focus({ preventScroll: true });
+  }
+  async function addPage() {
+    await flush();
+    await call('addPage', E.book.id);
+    await reload();
+    E.idx = E.book.pages.length - 1;
+    paintHead(); paintPage(); rememberPage();
+    story.focus({ preventScroll: true });
+  }
+  async function movePage(dir) {
+    await flush();
+    await call('movePage', page().id, dir);
+    E.idx += dir;
+    await reload();
+    paintHead(); paintPage(); rememberPage();
+  }
+  async function deletePage() {
+    const p = page();
+    const hasStuff = (p.text || '').trim() || p.image_file;
+    if (hasStuff && !(await confirmBox(`Apagar a página ${E.idx + 1}?`, 'O texto e o desenho desta página vão sumir para sempre.', 'Apagar página'))) return;
+    await flush();
+    await call('deletePage', p.id);
+    await reload();
+    paintHead(); paintPage(); rememberPage();
+    toast('Página apagada.');
+  }
+  async function drawPage(p) {
+    if (!(p.text || '').trim() && !(p.action || '').trim()) {
+      toast('Escreva a página ou conte o que o herói faz, para a IA saber o que desenhar.', 'error');
+      action.focus();
+      return;
+    }
+    if (drawing.has(p.id)) return;
+    await flush();
+    drawing.add(p.id);
+    const bookId = E.book.id;
+    if (page() === p) paintArt();
+    paintStrip();
+    try {
+      const r = await call('draw', p.id);
+      const target = E.book.id === bookId && E.book.pages.find(x => x.id === p.id);
+      if (target) { target.image_file = r.page.image_file; target.prompt_used = r.page.prompt_used; }
+      if (r.source === 'pollinations') toast('Desenho pronto! Quem desenhou foi o desenhista reserva.', 'good');
+      else toast('Desenho pronto!', 'good', 2500);
+    } catch (e) { /* aviso já mostrado */ }
+    finally {
+      drawing.delete(p.id);
+      if ($view.contains(art)) { paintArt(); paintStrip(); paintHead(); }
+    }
+  }
+  async function clearArt(p) {
+    if (!(await confirmBox('Apagar este desenho?', 'O texto da página continua. Depois você pode desenhar de novo.', 'Apagar desenho'))) return;
+    await call('clearImage', p.id);
+    p.image_file = null;
+    paintArt(); paintStrip(); paintHead();
+  }
+  async function spelling() {
+    const p = page();
+    const original = story.value;
+    if (!original.trim()) { toast('Escreva alguma coisa primeiro.'); return; }
+    await flush();
+    const fixed = await call('spelling', original);
+    if (fixed.trim() === original.trim()) { toast('Nenhum erro encontrado. Mandou bem!', 'good'); return; }
+    const [a, b] = diffViews(original, fixed);
+    openModal({
+      title: 'Correção de ortografia', wide: true,
+      body: [
+        el('p', { text: 'Em amarelo, o que o corretor mudou. Nenhuma ideia sua foi trocada, só a escrita.' }),
+        el('div', { class: 'compare' }, a, b)
+      ],
+      actions: [
+        { label: 'Manter o meu', kind: 'btn-ghost' },
+        { label: 'Usar a correção', kind: 'btn-primary', icon: 'check', onClick: () => {
+          if (page() !== p) return;
+          story.value = fixed; p.text = fixed; queue(p.id, { text: fixed }); flush();
+          toast('Correção aplicada.', 'good');
+        } }
+      ]
+    });
+  }
+  function editTitle() {
+    const input = el('input', { class: 'input', id: 'edit-title', maxlength: 80, value: E.book.title });
+    openModal({
+      title: 'Nome do livro', body: input,
+      actions: [
+        { label: 'Cancelar' },
+        { label: 'Salvar', kind: 'btn-primary', onClick: async () => {
+          const v = input.value.trim();
+          if (!v) { toast('O livro precisa de um nome.'); return false; }
+          const fresh = await call('updateBook', E.book.id, { title: v });
+          E.book.title = fresh.title; paintHead();
+        } }
+      ]
+    });
+  }
+  function editHero() {
+    const name = el('input', { class: 'input', id: 'edit-hero', maxlength: 40, value: E.book.hero_name });
+    const desc = el('textarea', { class: 'textarea', id: 'edit-desc', maxlength: 600, value: E.book.hero_desc });
+    openModal({
+      title: 'Ficha do herói',
+      body: [
+        el('p', { text: 'A IA usa esta ficha em todos os desenhos para o herói sair sempre parecido.' }),
+        el('label', { class: 'field' }, el('span', { text: 'Nome' }), name),
+        el('label', { class: 'field' }, el('span', { text: 'Como ele é' }), desc)
+      ],
+      actions: [
+        { label: 'Cancelar' },
+        { label: 'Salvar ficha', kind: 'btn-primary', onClick: async ev => {
+          const b = ev.currentTarget;
+          let ok = false;
+          await busy(b, async () => {
+            const fresh = await call('updateBook', E.book.id, { hero_name: name.value.trim(), hero_desc: desc.value.trim() });
+            Object.assign(E.book, { hero_name: fresh.hero_name, hero_desc: fresh.hero_desc, hero_prompt_en: fresh.hero_prompt_en });
+            ok = true;
+          }, 'Salvando...');
+          if (!ok) return false;
+          paintHead(); paintPage();
+          toast('Ficha salva. Os próximos desenhos já usam ela.', 'good');
+        } }
+      ]
+    });
+  }
+  async function publish() {
+    await flush();
+    await call('updateBook', E.book.id, { status: 'published' });
+    toast('Livro publicado! Ele já está na estante.', 'good', 5000);
+    go('reader', { id: E.book.id });
+  }
+
+  // ----- montagem -----
+  $view.append(el('div', { class: 'wrap' },
+    head,
+    el('div', { class: 'ed-grid' },
+      el('div', { class: 'col' }, writeCard, actionCard),
+      el('div', { class: 'col' }, artCard, pager, pageTools)),
+    el('div', { class: 'field' }, el('h2', { class: 'section', text: 'Todas as páginas' }), strip)));
+  paintHead();
+  paintPage();
+  story.setSelectionRange(story.value.length, story.value.length);
+  story.focus({ preventScroll: true });
+  $view.scrollTop = 0;
+}
+
+// diferença palavra por palavra entre o texto original e o corrigido
+function diffViews(a, b) {
+  const ta = a.split(/(\s+)/), tb = b.split(/(\s+)/);
+  const n = ta.length, m = tb.length;
+  const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    L[i][j] = ta[i] === tb[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const left = el('div'), right = el('div');
+  let i = 0, j = 0;
+  while (i < n || j < m) {
+    if (i < n && j < m && ta[i] === tb[j]) { left.append(ta[i]); right.append(tb[j]); i++; j++; }
+    else if (j < m && (i >= n || L[i][j + 1] >= L[i + 1][j])) { right.append(/^\s+$/.test(tb[j]) ? tb[j] : el('mark', { text: tb[j] })); j++; }
+    else { left.append(/^\s+$/.test(ta[i]) ? ta[i] : el('del', { text: ta[i] })); i++; }
+  }
+  return [
+    el('div', {}, el('div', { class: 'label', text: 'O seu texto' }), left),
+    el('div', {}, el('div', { class: 'label', text: 'Com a correção' }), right)
+  ].map(x => { x.style.display = 'grid'; x.style.gap = '8px'; return x; });
+}
+
+// ======================================================================
+// LEITOR
+// ======================================================================
+async function renderReader(id, at) {
+  const book = await call('getBook', id);
+  const total = book.pages.length + 1;
+  let idx = Math.min(Math.max(0, at), total - 1);
+  const cover = book.pages.find(p => p.image_file);
+
+  const stage = el('div');
+  const count = el('span', { class: 'count' });
+  const prev = el('button', { type: 'button', class: 'round', 'aria-label': 'Voltar página', onClick: () => show(idx - 1) });
+  prev.innerHTML = ICON.left;
+  const next = el('button', { type: 'button', class: 'round', 'aria-label': 'Passar página', onClick: () => show(idx + 1) });
+  next.innerHTML = ICON.right;
+
+  function show(i) {
+    if (i < 0 || i >= total) return;
+    idx = i;
+    if (idx === 0) {
+      stage.replaceChildren(el('div', { class: 'spread coverpage' },
+        el('div', { class: 'pic' }, cover ? el('img', { src: imgSrc(cover.image_file), alt: '' }) : null),
+        el('div', { class: 'words' },
+          el('p', { text: styleName(book.style) }),
+          el('h2', { text: book.title }),
+          el('p', { text: 'de Vítor Ribeiro de Oliveira' }))));
+      count.textContent = 'Capa';
+    } else {
+      const p = book.pages[idx - 1];
+      stage.replaceChildren(el('div', { class: 'spread' },
+        el('div', { class: 'pic' }, p.image_file ? el('img', { src: imgSrc(p.image_file), alt: '' }) : null),
+        el('div', { class: 'words' }, el('span', { class: 'pg', text: String(idx) }), el('div', { text: p.text || '' }))));
+      count.textContent = `Página ${idx} de ${total - 1}`;
+    }
+    prev.disabled = idx === 0;
+    next.disabled = idx === total - 1;
+  }
+  const onKey = e => {
+    if (document.querySelector('.modal-back')) return;
+    if (e.key === 'ArrowRight') show(idx + 1);
+    if (e.key === 'ArrowLeft') show(idx - 1);
+  };
+  document.addEventListener('keydown', onKey);
+  S.cleanup.push(() => document.removeEventListener('keydown', onKey));
+
+  const pdfBtn = btn('Salvar em PDF', 'btn-ghost', null, 'pdf');
+  pdfBtn.addEventListener('click', () => busy(pdfBtn, async () => {
+    const r = await call('exportPdf', book.id);
+    if (r.saved) toast('PDF salvo! Ele já abriu para você ver.', 'good');
+  }, 'Montando o PDF...'));
+
+  $view.append(el('div', { class: 'wrap reader' },
+    el('div', { class: 'reader-head' },
+      el('div', { class: 'row' }, btn('Biblioteca', 'btn-ghost', () => go('library'), 'back'), el('h1', { class: 'display', text: book.title })),
+      el('div', { class: 'row' }, pdfBtn, btn(book.status === 'published' ? 'Editar' : 'Continuar escrevendo', 'btn-primary', () => go('editor', { id: book.id }), 'pen'))),
+    stage,
+    el('div', { class: 'reader-nav' }, prev, count, next)));
+  show(idx);
+}
+
+// ======================================================================
+// ÁREA DOS PAIS
+// ======================================================================
+async function openParents() {
+  const st = await call('getSettings');
+  if (!st.has_pin) return go('settings');
+  const pin = el('input', { class: 'input pin-input', id: 'pin-check', type: 'password', inputmode: 'numeric', maxlength: 8, autocomplete: 'off' });
+  const m = openModal({
+    title: 'Área dos pais', body: [el('p', { text: 'Digite a senha dos pais.' }), pin],
+    actions: [
+      { label: 'Cancelar' },
+      { label: 'Entrar', kind: 'btn-primary', onClick: async () => {
+        if (await call('checkPin', pin.value)) { go('settings'); return; }
+        toast('Senha errada.', 'error'); pin.value = ''; pin.focus(); return false;
+      } }
+    ]
+  });
+  pin.addEventListener('keydown', e => { if (e.key === 'Enter') m.box.querySelector('.modal-foot .btn:last-child').click(); });
+}
+
+async function renderSettings() {
+  let st = await call('getSettings');
+  const wrap = el('div', { class: 'settings' });
+
+  // --- IA Cloudflare ---
+  const status = el('span');
+  const paintStatus = (kind, text) => { status.className = `pill ${kind}`; status.textContent = text; };
+  paintStatus(st.ai_ready ? 'ok' : 'warn', st.ai_ready ? 'Configurada' : 'Não configurada');
+  const acc = el('input', { class: 'input', id: 'cf-acc', value: st.cf_account_id, placeholder: 'Ex.: 3f2a9c...', autocomplete: 'off', spellcheck: 'false' });
+  const tok = el('input', { class: 'input', id: 'cf-tok', type: 'password', placeholder: st.has_token ? 'Token já salvo. Deixe vazio para manter.' : 'Cole o token aqui', autocomplete: 'off', spellcheck: 'false' });
+  const testBtn = btn('Testar', 'btn-ghost', null, 'check');
+  testBtn.addEventListener('click', () => busy(testBtn, async () => {
+    const r = await callQuiet('testAi', { cf_account_id: acc.value, cf_token: tok.value });
+    if (r.ok) paintStatus('ok', 'Funcionando!');
+    else paintStatus('err', r.error);
+  }, 'Testando...'));
+  const saveAi = btn('Salvar', 'btn-primary', null, 'check');
+  saveAi.addEventListener('click', () => busy(saveAi, async () => {
+    st = await call('saveSettings', { cf_account_id: acc.value, cf_token: tok.value });
+    tok.value = ''; tok.placeholder = st.has_token ? 'Token já salvo. Deixe vazio para manter.' : 'Cole o token aqui';
+    paintStatus(st.ai_ready ? 'ok' : 'warn', st.ai_ready ? 'Configurada' : 'Não configurada');
+    toast('Configuração salva.', 'good');
+  }, 'Salvando...'));
+
+  const guide = el('ol', { class: 'guide' },
+    el('li', {}, 'Entre em ', el('code', { text: 'dash.cloudflare.com' }), ' e crie uma conta grátis (ou faça login).'),
+    el('li', {}, 'O ', el('b', { text: 'ID da conta' }), ' aparece no endereço da página, logo depois de ', el('code', { text: 'dash.cloudflare.com/' }), '. É um código de 32 letras e números.'),
+    el('li', {}, 'Para o ', el('b', { text: 'token' }), ': procure por ', el('code', { text: 'API Tokens' }), ' no painel, clique em ', el('b', { text: 'Criar token' }), ', escolha o modelo ', el('b', { text: 'Workers AI' }), ', confirme e copie o código que aparecer.'),
+    el('li', {}, 'Cole os dois aqui, aperte ', el('b', { text: 'Testar' }), ' e depois ', el('b', { text: 'Salvar' }), '.'));
+
+  wrap.append(el('div', { class: 'lib-head' },
+    el('div', { class: 'field' }, el('h1', { class: 'display', text: 'Área dos pais' }), el('p', { class: 'lead', text: 'Configurações da IA, senha e onde ficam guardados os livros.' })),
+    btn('Voltar', 'btn-ghost', () => go('library'), 'back')));
+
+  wrap.append(el('section', { class: 'card set-card' },
+    el('h2', {}, 'IA da Cloudflare (grátis)', status),
+    el('p', { class: 'hint', text: 'A Cloudflare dá uma cota diária gratuita que desenha e corrige a ortografia. Quando a cota do dia acaba, ela volta no dia seguinte, sem cobrar nada.' }),
+    guide,
+    el('div', { class: 'two' },
+      el('label', { class: 'field' }, el('span', { text: 'ID da conta' }), acc),
+      el('label', { class: 'field' }, el('span', { text: 'Token da API' }), tok)),
+    el('div', { class: 'row' }, testBtn, saveAi)));
+
+  // --- reserva e qualidade ---
+  const poll = el('input', { type: 'checkbox', id: 'poll' });
+  poll.checked = st.use_pollinations;
+  poll.addEventListener('change', async () => { st = await call('saveSettings', { use_pollinations: poll.checked }); toast('Salvo.', 'good', 1800); });
+  const steps = [['4', 'Rápido', 'Mais desenhos por dia'], ['6', 'Caprichado', 'Equilíbrio'], ['8', 'Máximo', 'Menos desenhos por dia']];
+  const seg = el('div', { class: 'segment' }, steps.map(([v, a, b]) => el('button', {
+    type: 'button', 'aria-pressed': String(st.cf_steps === v),
+    onClick: async e => {
+      st = await call('saveSettings', { cf_steps: v });
+      seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === e.currentTarget)));
+      toast('Qualidade salva.', 'good', 1800);
+    }
+  }, a, el('small', { text: b }))));
+  wrap.append(el('section', { class: 'card set-card' },
+    el('h2', { text: 'Desenhos' }),
+    el('label', { class: 'toggle' }, poll, 'Usar o desenhista reserva (Pollinations) quando a Cloudflare falhar'),
+    el('p', { class: 'hint', text: 'Atenção: o reserva grátis desenha bem pior, coloca a marca "pollinations.ai" no canto e só faz 1 desenho por minuto. Serve só para emergência.' }),
+    el('div', { class: 'field' }, el('span', { text: 'Qualidade na Cloudflare' }), seg)));
+
+  // --- senha ---
+  const pin1 = el('input', { class: 'input', id: 'pin1', type: 'password', inputmode: 'numeric', maxlength: 8, placeholder: 'Nova senha (4 a 8 números)', autocomplete: 'off' });
+  const pin2 = el('input', { class: 'input', id: 'pin2', type: 'password', inputmode: 'numeric', maxlength: 8, placeholder: 'Repita a senha', autocomplete: 'off' });
+  const pinRow = el('div', { class: 'row' });
+  const paintPin = () => {
+    pinRow.replaceChildren(
+      btn(st.has_pin ? 'Trocar senha' : 'Criar senha', 'btn-primary', async () => {
+        if (!/^\d{4,8}$/.test(pin1.value)) { toast('Use de 4 a 8 números.', 'error'); return; }
+        if (pin1.value !== pin2.value) { toast('As duas senhas estão diferentes.', 'error'); return; }
+        st = await call('saveSettings', { new_pin: pin1.value });
+        pin1.value = pin2.value = '';
+        toast('Senha dos pais salva.', 'good'); paintPin();
+      }, 'check'),
+      st.has_pin ? btn('Remover senha', 'btn-danger', async () => {
+        st = await call('saveSettings', { new_pin: '' });
+        toast('Senha removida.'); paintPin();
+      }) : null);
+  };
+  paintPin();
+  wrap.append(el('section', { class: 'card set-card' },
+    el('h2', { text: 'Senha dos pais' }),
+    el('p', { class: 'hint', text: 'Protege esta área para o token da IA não ser alterado sem querer.' }),
+    el('div', { class: 'two' }, pin1, pin2),
+    pinRow));
+
+  // --- dados ---
+  wrap.append(el('section', { class: 'card set-card' },
+    el('h2', { text: 'Onde ficam os livros' }),
+    el('p', { class: 'hint', text: 'Tudo fica salvo neste computador: o banco de dados, os desenhos e uma cópia de segurança por dia (as últimas 14).' }),
+    el('div', { class: 'row' }, btn('Abrir pasta dos livros', 'btn-ghost', () => call('openDataFolder'), 'folder'))));
+
+  $view.append(el('div', { class: 'wrap' }, wrap));
+}
+
+go('library');

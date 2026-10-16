@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' img: data:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'">
+  <title>Editora do Vítor</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="brand" id="brand" type="button" title="Voltar para a Biblioteca">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-text"><b>Editora do Vítor</b><small>Ribeiro de Oliveira</small></span>
+    </button>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="settingsBtn" type="button" title="Área dos pais" aria-label="Área dos pais"></button>
+    </div>
+  </header>
+  <main id="view" tabindex="-1"></main>
+  <div id="modalRoot"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

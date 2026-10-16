@@ -1,0 +1,48 @@
+{
+  "name": "editora-do-vitor",
+  "productName": "Editora do Vítor",
+  "version": "1.0.0",
+  "description": "Estúdio para o Vítor escrever e ilustrar seus livros e mangás",
+  "main": "main.js",
+  "author": "Família Ribeiro de Oliveira",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "br.familia.editoradovitor",
+    "productName": "Editora do Vítor",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Editora do Vítor"
+    }
+  },
+  "dependencies": {
+    "@fontsource/bangers": "^5.3.0",
+    "@fontsource/nunito": "^5.3.0",
+    "sql.js": "^1.15.0"
+  },
+  "devDependencies": {
+    "electron": "^37.10.3",
+    "electron-builder": "^26.15.3"
+  }
+}
