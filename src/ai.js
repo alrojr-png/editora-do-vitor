@@ -145,7 +145,7 @@ const PLAN_SYSTEM = [
   '5. narration (Portuguese): the narrator sentences of the text that belong to THIS panel, copied with the author\'s words (max 110 characters), or "".',
   '6. dialogue (Portuguese): what characters say in THIS panel. Copy speech from the text exactly, without quotes or names. If the text has no speech, you may add one very short natural line. Max 2 lines.',
   '7. sfx: a Portuguese manga sound effect for impacts or fast actions ("BUM!", "ZÁS!", "CRASH!", "VRUUM!", "PAF!"), or "".',
-  '8. Every sentence of the page must appear in some panel as narration or dialogue, in order.',
+  '8. Every sentence of the page must appear in some panel as narration or dialogue, in order. Never repeat the same words in the narration and in a speech balloon.',
   'Example for the page "O dragão acordou e cuspiu fogo na vila. Ana pegou o escudo e gritou: Para com isso!":',
   '{"panels":[{"scene":"Wide shot of a medieval village at dawn, a huge green dragon wakes up on a hill and breathes a stream of fire toward thatched roofs, villagers running away","hero":false,"narration":"O dragão acordou e cuspiu fogo na vila.","dialogue":[],"sfx":"FUUUSH!"},' +
     '{"scene":"Low angle shot of the main character raising a round wooden shield against the fire, determined angry expression, sparks and smoke all around","hero":true,"narration":"Ana pegou o escudo e gritou:","dialogue":["Para com isso!"],"sfx":""}]}',
@@ -161,14 +161,21 @@ function parsePlan(out) {
   }
   const panels = Array.isArray(obj?.panels) ? obj.panels : null;
   if (!panels || !panels.length) return null;
-  return panels.slice(0, 4).map(p => ({
-    scene: safeWords(clean(p.scene)).slice(0, 400) || 'the main character in the scene',
-    hero: p.hero !== false,
-    narration: clean(p.narration).slice(0, 140),
-    dialogue: (Array.isArray(p.dialogue) ? p.dialogue : [p.dialogue]).map(clean).filter(Boolean).slice(0, 2).map(d => d.replace(/^[-–—]\s*/, '').slice(0, 110)),
-    sfx: clean(p.sfx).slice(0, 16)
-  }));
+  return panels.slice(0, 4).map(p => {
+    const dialogue = (Array.isArray(p.dialogue) ? p.dialogue : [p.dialogue]).map(clean).filter(Boolean).slice(0, 2).map(d => d.replace(/^[-–—]\s*/, '').slice(0, 110));
+    let narration = clean(p.narration).slice(0, 140);
+    // A IA às vezes repete a fala na narração ("Mas que chato..., disse."): fica só o balão.
+    if (narration && dialogue.some(d => norm(narration).includes(norm(d)) || norm(d).includes(norm(narration)))) narration = '';
+    return {
+      scene: safeWords(clean(p.scene)).slice(0, 400) || 'the main character in the scene',
+      hero: p.hero !== false,
+      narration,
+      dialogue,
+      sfx: clean(p.sfx).slice(0, 16)
+    };
+  });
 }
+const norm = t => String(t).toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
 
 async function planPage(s, book, text, prevText) {
   const user =
@@ -246,9 +253,34 @@ function panelPrompt(book, panel, shape, hasRef) {
   return `Manga panel, ${style}, ${SHAPES[shape].hint}. ${panel.scene}.${who} No text, no letters, no speech balloons.`;
 }
 
+const SCENE_RULES =
+  'Write ONE English image prompt (25-45 words) describing what is visible: action, pose, facial expression, setting with background details, other characters with their looks, camera angle. ' +
+  'Call the protagonist "the main character" and do not describe their looks. Never use the words boy, girl, kid or child. ' +
+  'Keep it a fun children\'s cartoon: no blood, no wounds, weapons never touch anyone (show swings, sparks, dodges, monsters flying back comically instead). ' +
+  'No text or speech balloons. Output only the prompt.';
+
+// Cena barrada pelo filtro: reescreve no jeito "desenho animado" e tenta de novo.
+async function softenScene(s, scene) {
+  return safeWords(clean(await chat(s, `Rewrite this image prompt so it is gentle and suitable for a children's cartoon, keeping the same characters, place and idea. ${SCENE_RULES}`, scene, 200)));
+}
+// O Vítor descreve com as próprias palavras o que o quadrinho deve mostrar.
+async function sceneFromKid(s, book, descPt, panel) {
+  return safeWords(clean(await chat(s,
+    `A 10-year-old Brazilian author describes in Portuguese what a manga panel must show. Turn it into an image prompt that follows the description faithfully. ${SCENE_RULES}`,
+    `Main character: ${book.hero_name || 'the hero'}\nPanel text (context): ${[panel.narration, ...(panel.dialogue || [])].filter(Boolean).join(' ')}\nWhat the author wants to see: ${descPt}`, 220)));
+}
+
+// Devolve { buffer, scene } — a cena pode mudar se precisou ser suavizada.
 async function drawPanel(s, book, panel, shape, ref) {
   const hasRef = Boolean(ref && panel.hero && usesKlein(book.style));
-  return draw(s, panelPrompt(book, panel, shape, hasRef), shape, hasRef ? ref : null, book.style);
+  const attempt = scene => draw(s, panelPrompt(book, { ...panel, scene }, shape, hasRef), shape, hasRef ? ref : null, book.style);
+  try {
+    return { buffer: await attempt(panel.scene), scene: panel.scene };
+  } catch (e) {
+    if (e.kind !== 'safety') throw e;
+    const soft = await softenScene(s, panel.scene);
+    return { buffer: await attempt(soft), scene: soft };
+  }
 }
 
 async function heroOptions(s, book) {
@@ -277,4 +309,4 @@ async function testConnection(s) {
   return Boolean(await chat(s, 'Responda apenas: ok', 'teste', 10));
 }
 
-module.exports = { planPage, drawPanel, heroOptions, describeHero, heroToEnglish, fixSpelling, testConnection, hasCloudflare, FriendlyError, LAYOUTS, STYLES };
+module.exports = { planPage, drawPanel, sceneFromKid, heroOptions, describeHero, heroToEnglish, fixSpelling, testConnection, hasCloudflare, FriendlyError, LAYOUTS, STYLES };

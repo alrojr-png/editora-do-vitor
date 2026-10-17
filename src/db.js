@@ -170,7 +170,7 @@ class Store {
     const panels = page.panels;
     if (!panels[idx]) return page;
     const before = panels[idx].image_file;
-    for (const k of ['narration', 'dialogue', 'sfx', 'scene', 'image_file', 'error']) if (k in fields) panels[idx][k] = fields[k];
+    for (const k of ['narration', 'dialogue', 'sfx', 'scene', 'user_desc', 'image_file', 'error']) if (k in fields) panels[idx][k] = fields[k];
     this.run('UPDATE pages SET panels_json = ?, updated_at = ? WHERE id = ?', [JSON.stringify(panels), now(), pageId]);
     this.touchBook(page.book_id);
     this.flush();

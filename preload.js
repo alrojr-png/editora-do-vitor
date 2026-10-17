@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('editora', {
   deletePage: id => call('pages:delete', id),
   movePage: (id, dir) => call('pages:move', id, dir),
   makeManga: pageId => call('page:manga', pageId),
-  redrawPanel: (pageId, idx) => call('panel:redraw', pageId, idx),
+  redrawPanel: (pageId, idx, desc) => call('panel:redraw', pageId, idx, desc),
   updatePanel: (pageId, idx, fields) => call('panel:update', pageId, idx, fields),
   onProgress: fn => {
     const listener = (_e, data) => fn(data);

@@ -11,6 +11,13 @@
 /* O desenhista entrega quadrado; no quadrinho largo o corte privilegia a parte de cima (onde ficam as cabeças). */
 .panel.wide > img { object-position: 50% 22%; }
 .panel-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 10%; text-align: center; font-weight: 800; color: #6A6F84; font-size: 2.6cqw; background-image: radial-gradient(rgba(0,0,0,.08) 1.5px, transparent 1.6px); background-size: 9px 9px; }
+/* quadrinho que não saiu: o Vítor conta a cena com as palavras dele */
+.panel.ask { aspect-ratio: auto; display: grid; align-content: center; gap: 10px; padding: 16px; background: #FFF7F1; border-style: dashed; border-color: var(--accent); font-family: var(--f-body); }
+.panel.ask b { font-family: var(--f-display); font-weight: 400; font-size: 24px; letter-spacing: 1px; color: var(--accent-dark); }
+.panel.ask p { margin: 0; font-size: 14px; font-weight: 700; line-height: 1.45; color: var(--ink); }
+.panel.ask q { display: block; font-size: 13px; font-weight: 700; color: var(--muted); font-style: italic; line-height: 1.4; }
+.panel.ask .textarea { min-height: 84px; font-size: 15px; background: #fff; }
+.panel.ask .btn { justify-self: start; }
 button.panel { cursor: pointer; }
 button.panel:hover { outline: 4px solid var(--magic); outline-offset: -4px; }
 .panel-edit { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); background: var(--magic); color: #fff; font-weight: 900; font-size: 13px; padding: 4px 12px; border-radius: 999px; opacity: 0; transition: opacity .15s; pointer-events: none; z-index: 3; }

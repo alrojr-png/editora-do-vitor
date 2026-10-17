@@ -169,19 +169,21 @@ settingsBtn.addEventListener('click', openParents);
 // ======================================================================
 // PÁGINA DE MANGÁ (a mesma montagem na tela, no leitor e no PDF)
 // ======================================================================
-function mangaPage(page, style, { onPanel, number } = {}) {
+function mangaPage(page, style, { onPanel, onDescribe, number } = {}) {
   const panels = page.panels || [];
   const sheet = el('div', { class: `manga n${panels.length}`, 'data-style': style });
   panels.forEach((p, i) => {
+    // No editor, quadrinho sem desenho vira um quadro para o Vítor contar a cena com as palavras dele.
+    if (!p.image_file && onDescribe) { sheet.append(describePanel(p, i, onDescribe)); return; }
     const fig = el(onPanel ? 'button' : 'figure', {
-      class: `panel ${p.shape || 'wide'}${p.narration ? ' has-cap' : ''}`,
+      class: `panel ${p.shape || 'wide'}${p.narration && !repeatsDialogue(p) ? ' has-cap' : ''}`,
       type: onPanel ? 'button' : null,
       'aria-label': onPanel ? `Quadrinho ${i + 1}: editar` : null,
       onClick: onPanel ? () => onPanel(i) : null
     });
     if (p.image_file) fig.append(el('img', { src: imgSrc(p.image_file), alt: '' }));
-    else fig.append(el('div', { class: 'panel-empty', text: p.error || 'Esse quadrinho não saiu. Clique para desenhar de novo.' }));
-    if (p.narration) fig.append(el('div', { class: 'cap', text: p.narration }));
+    else fig.append(el('div', { class: 'panel-empty' }));
+    if (p.narration && !repeatsDialogue(p)) fig.append(el('div', { class: 'cap', text: p.narration }));
     (p.dialogue || []).slice(0, 2).forEach((d, k) => {
       if (d) fig.append(el('div', { class: `bal b${k}${/!/.test(d) ? ' shout' : ''}`, text: d }));
     });
@@ -191,6 +193,28 @@ function mangaPage(page, style, { onPanel, number } = {}) {
   });
   if (number) sheet.append(el('span', { class: 'folio', text: String(number) }));
   return sheet;
+}
+// Páginas antigas podem ter a fala repetida na narração ("Mas que chato..., disse."): mostra só o balão.
+const normText = t => String(t).toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+const repeatsDialogue = p => (p.dialogue || []).some(d => d && (normText(p.narration).includes(normText(d)) || normText(d).includes(normText(p.narration))));
+
+function describePanel(p, i, onDescribe) {
+  const said = [repeatsDialogue(p) ? '' : p.narration, ...(p.dialogue || [])].filter(Boolean).join(' ');
+  const desc = el('textarea', { class: 'textarea', id: `desc-${i}`, maxlength: 400, value: p.user_desc || '',
+    placeholder: 'Ex.: o herói balançando a espada e o monstro voando longe, com cara de surpreso' });
+  const go = btn('Desenhar', 'btn-magic', null, 'wand');
+  go.addEventListener('click', () => {
+    if (!desc.value.trim()) { toast('Conte o que aparece no quadrinho.', 'error'); desc.focus(); return; }
+    onDescribe(i, desc.value.trim(), go);
+  });
+  return el('div', { class: `panel ask ${p.shape || 'wide'}` },
+    el('b', { text: `Quadrinho ${i + 1} não saiu` }),
+    el('p', { text: (p.error === 'safety' || /combina/.test(p.error || ''))
+      ? 'A IA não conseguiu desenhar essa cena. Conte do seu jeito o que aparece nele, como num desenho animado.'
+      : 'A IA não conseguiu desenhar. Conte do seu jeito o que aparece nele.' }),
+    said ? el('q', { text: said }) : null,
+    desc,
+    go);
 }
 function coverSheet(book) {
   const img = book.hero_ref || book.pages.map(firstImage).find(Boolean);
@@ -500,7 +524,7 @@ async function renderEditor(id) {
     const p = page();
     stage.replaceChildren();
     if ((p.panels || []).length) {
-      stage.append(mangaPage(p, E.book.style, { onPanel: i => editPanel(p, i) }));
+      stage.append(mangaPage(p, E.book.style, { onPanel: i => editPanel(p, i), onDescribe: (i, text, button) => describeAndDraw(p, i, text, button) }));
       stage.append(el('p', { class: 'hint center', text: 'Clique num quadrinho para mudar as falas ou desenhar de novo.' }));
     } else {
       const empty = el('div', { class: 'manga-empty' });
@@ -610,8 +634,18 @@ async function renderEditor(id) {
       if ($view.contains(stage)) { paintMakeBtn(); paintStage(); paintStrip(); paintHead(); }
     }
   }
+  async function describeAndDraw(p, i, text, button) {
+    await busy(button, async () => {
+      const fresh = await call('redrawPanel', p.id, i, text);
+      replacePage(fresh);
+      if (page().id === p.id) { paintStage(); paintStrip(); paintHead(); }
+      toast('Quadrinho desenhado!', 'good', 2500);
+    }, 'Desenhando...');
+  }
   function editPanel(p, i) {
     const panel = p.panels[i];
+    const own = el('textarea', { class: 'textarea small', id: 'pn-own', maxlength: 400, value: panel.user_desc || '',
+      placeholder: 'Opcional. Ex.: o Larry de costas olhando a cidade à noite' });
     const cap = el('textarea', { class: 'textarea small', id: 'pn-cap', maxlength: 140, value: panel.narration || '' });
     const d1 = el('input', { class: 'input', id: 'pn-d1', maxlength: 110, value: (panel.dialogue || [])[0] || '' });
     const d2 = el('input', { class: 'input', id: 'pn-d2', maxlength: 110, value: (panel.dialogue || [])[1] || '' });
@@ -623,12 +657,13 @@ async function renderEditor(id) {
         el('label', { class: 'field' }, el('span', { text: 'Narração (caixinha)' }), cap),
         el('label', { class: 'field' }, el('span', { text: 'Fala 1 (balão)' }), d1),
         el('label', { class: 'field' }, el('span', { text: 'Fala 2 (balão)' }), d2),
-        el('label', { class: 'field' }, el('span', { text: 'Som (onomatopeia)' }), sfx))),
+        el('label', { class: 'field' }, el('span', { text: 'Som (onomatopeia)' }), sfx),
+        el('label', { class: 'field' }, el('span', { text: 'Quer o desenho diferente? Descreva do seu jeito' }), own))),
       actions: [
         { label: 'Desenhar de novo', kind: 'btn-magic', icon: 'redo', close: false, onClick: async ev => {
           const b = ev.currentTarget;
           await busy(b, async () => {
-            const fresh = await call('redrawPanel', p.id, i);
+            const fresh = await call('redrawPanel', p.id, i, own.value.trim());
             replacePage(fresh);
             const np = E.book.pages.find(x => x.id === p.id);
             preview.replaceChildren(np.panels[i].image_file ? el('img', { src: imgSrc(np.panels[i].image_file), alt: '' }) : el('span', { text: 'Sem desenho' }));

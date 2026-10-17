@@ -217,10 +217,12 @@ function registerIpc() {
       const panels = await mapLimit(plan, 2, async (panel, i) => {
         const out = { ...panel, shape: shapes[i], image_file: null, error: '' };
         try {
-          out.image_file = store.saveImage(book.id, `p${page.id}-q${i + 1}`, await ai.drawPanel(s, book, panel, shapes[i], ref));
+          const r = await ai.drawPanel(s, book, panel, shapes[i], ref);
+          out.image_file = store.saveImage(book.id, `p${page.id}-q${i + 1}`, r.buffer);
+          out.scene = r.scene;
         } catch (e) {
           if (['auth', 'config', 'quota'].includes(e.kind)) throw e;
-          out.error = e instanceof ai.FriendlyError ? e.message : 'Esse quadrinho não saiu.';
+          out.error = e.kind === 'safety' ? 'safety' : 'failed';
         }
         progress(pageId, ++done, plan.length, `Quadrinho ${done} de ${plan.length} pronto!`);
         return out;
@@ -230,17 +232,32 @@ function registerIpc() {
       busyPages.delete(pageId);
     }
   });
-  handle('panel:redraw', async (pageId, idx) => {
+  // Redesenha um quadrinho. Se o Vítor descreveu a cena com as palavras dele, a IA desenha a partir disso.
+  handle('panel:redraw', async (pageId, idx, descPt) => {
     const key = `${pageId}:${idx}`;
     if (busyPages.has(key)) throw new ai.FriendlyError('Esse quadrinho já está sendo desenhado.', 'busy');
     busyPages.add(key);
     try {
       const s = settingsRaw();
       const page = store.getPage(pageId);
-      const panel = page.panels[idx];
+      const panel = { ...page.panels[idx] };
       const book = await ensureHeroText(s, store.getBook(page.book_id));
-      const buf = await ai.drawPanel(s, book, panel, panel.shape, heroRef(book));
-      return store.updatePanel(pageId, idx, { image_file: store.saveImage(book.id, `p${page.id}-q${idx + 1}`, buf), error: '' });
+      const desc = String(descPt || '').trim();
+      if (desc) {
+        panel.scene = await ai.sceneFromKid(s, book, desc, panel);
+        panel.user_desc = desc;
+        store.updatePanel(pageId, idx, { scene: panel.scene, user_desc: desc });
+      }
+      try {
+        const r = await ai.drawPanel(s, book, panel, panel.shape, heroRef(book));
+        return store.updatePanel(pageId, idx, { image_file: store.saveImage(book.id, `p${page.id}-q${idx + 1}`, r.buffer), scene: r.scene, error: '' });
+      } catch (e) {
+        if (e.kind === 'safety') {
+          store.updatePanel(pageId, idx, { error: 'safety' });
+          throw new ai.FriendlyError('A IA não conseguiu desenhar essa cena. Tente descrever de um jeito mais "desenho animado", por exemplo: o troll voando longe depois do golpe.', 'safety');
+        }
+        throw e;
+      }
     } finally {
       busyPages.delete(key);
     }
