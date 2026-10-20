@@ -111,7 +111,7 @@ function openModal({ title, body, actions = [], wide = false, onClose }) {
   box.append(el('h2', { text: title }));
   if (body) box.append(...[].concat(body));
   if (actions.length) {
-    box.append(el('div', { class: 'modal-foot' }, actions.map(a => btn(a.label, a.kind || 'btn-ghost', async ev => {
+    box.append(el('div', { class: 'modal-foot' }, actions.filter(Boolean).map(a => btn(a.label, a.kind || 'btn-ghost', async ev => {
       if (a.onClick) {
         const r = await a.onClick(ev, close);
         if (r === false) return;
@@ -169,9 +169,16 @@ settingsBtn.addEventListener('click', openParents);
 // ======================================================================
 // PÁGINA DE MANGÁ (a mesma montagem na tela, no leitor e no PDF)
 // ======================================================================
-function mangaPage(page, style, { onPanel, onDescribe, number } = {}) {
+function mangaPage(page, style, { onPanel, onDescribe, onMove, number } = {}) {
   const panels = page.panels || [];
   const sheet = el('div', { class: `manga n${panels.length}`, 'data-style': style });
+  // Balão, narração e som: usa o lugar que o Vítor escolheu (em % do quadrinho) e, no editor, deixa arrastar.
+  const place = (fig, node, p, i, key) => {
+    const at = (p.pos || {})[key];
+    if (at) Object.assign(node.style, { left: `${at.x}%`, top: `${at.y}%`, right: 'auto', bottom: 'auto' });
+    if (onMove) { node.classList.add('drag'); dragInPanel(fig, node, at => onMove(i, key, at)); }
+    fig.append(node);
+  };
   panels.forEach((p, i) => {
     // No editor, quadrinho sem desenho vira um quadro para o Vítor contar a cena com as palavras dele.
     if (!p.image_file && onDescribe) { sheet.append(describePanel(p, i, onDescribe)); return; }
@@ -183,16 +190,50 @@ function mangaPage(page, style, { onPanel, onDescribe, number } = {}) {
     });
     if (p.image_file) fig.append(el('img', { src: imgSrc(p.image_file), alt: '' }));
     else fig.append(el('div', { class: 'panel-empty' }));
-    if (p.narration && !repeatsDialogue(p)) fig.append(el('div', { class: 'cap', text: p.narration }));
+    if (p.narration && !repeatsDialogue(p)) place(fig, el('div', { class: 'cap', text: p.narration }), p, i, 'cap');
     (p.dialogue || []).slice(0, 2).forEach((d, k) => {
-      if (d) fig.append(el('div', { class: `bal b${k}${/!/.test(d) ? ' shout' : ''}`, text: d }));
+      if (d) place(fig, el('div', { class: `bal b${k}${/!/.test(d) ? ' shout' : ''}`, text: d }), p, i, `b${k}`);
     });
-    if (p.sfx) fig.append(el('div', { class: `sfx${(p.dialogue || [])[1] ? ' mid' : ''}`, text: p.sfx }));
+    if (p.sfx) place(fig, el('div', { class: `sfx${(p.dialogue || [])[1] ? ' mid' : ''}`, text: p.sfx }), p, i, 'sfx');
     if (onPanel) fig.append(el('span', { class: 'panel-edit', text: 'Editar' }));
     sheet.append(fig);
   });
   if (number) sheet.append(el('span', { class: 'folio', text: String(number) }));
   return sheet;
+}
+// Arrastar dentro do quadrinho. Só conta como arrasto depois de 4px; um clique simples continua abrindo o quadrinho.
+function dragInPanel(fig, node, done) {
+  node.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY;
+    const left0 = node.offsetLeft, top0 = node.offsetTop;
+    const W = fig.clientWidth, H = fig.clientHeight;
+    const maxX = Math.max(0, 100 - node.offsetWidth / W * 100), maxY = Math.max(0, 100 - node.offsetHeight / H * 100);
+    const clamp = (v, max) => Math.round(Math.min(max, Math.max(0, v)) * 10) / 10;
+    let at = null;
+    try { node.setPointerCapture(e.pointerId); } catch {}
+    const move = ev => {
+      if (!at && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+      at = { x: clamp((left0 + ev.clientX - sx) / W * 100, maxX), y: clamp((top0 + ev.clientY - sy) / H * 100, maxY) };
+      node.classList.add('dragging');
+      Object.assign(node.style, { left: `${at.x}%`, top: `${at.y}%`, right: 'auto', bottom: 'auto' });
+    };
+    const up = () => {
+      node.removeEventListener('pointermove', move);
+      node.removeEventListener('pointerup', up);
+      node.removeEventListener('pointercancel', up);
+      node.classList.remove('dragging');
+      if (!at) return;
+      // Engole o clique que vem logo depois do arrasto, para não abrir a janela do quadrinho.
+      const eat = ev => { ev.stopPropagation(); ev.preventDefault(); };
+      fig.addEventListener('click', eat, { capture: true, once: true });
+      setTimeout(() => { fig.removeEventListener('click', eat, { capture: true }); done(at); }, 0);
+    };
+    node.addEventListener('pointermove', move);
+    node.addEventListener('pointerup', up);
+    node.addEventListener('pointercancel', up);
+  });
 }
 // Páginas antigas podem ter a fala repetida na narração ("Mas que chato..., disse."): mostra só o balão.
 const normText = t => String(t).toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
@@ -524,8 +565,12 @@ async function renderEditor(id) {
     const p = page();
     stage.replaceChildren();
     if ((p.panels || []).length) {
-      stage.append(mangaPage(p, E.book.style, { onPanel: i => editPanel(p, i), onDescribe: (i, text, button) => describeAndDraw(p, i, text, button) }));
-      stage.append(el('p', { class: 'hint center', text: 'Clique num quadrinho para mudar as falas ou desenhar de novo.' }));
+      stage.append(mangaPage(p, E.book.style, {
+        onPanel: i => editPanel(p, i),
+        onDescribe: (i, text, button) => describeAndDraw(p, i, text, button),
+        onMove: (i, key, at) => moveBubble(p, i, key, at)
+      }));
+      stage.append(el('p', { class: 'hint center', text: 'Arraste os balões para mudar de lugar. Clique num quadrinho para mudar as falas ou desenhar de novo.' }));
     } else {
       const empty = el('div', { class: 'manga-empty' });
       empty.innerHTML = ICON.panels;
@@ -642,6 +687,11 @@ async function renderEditor(id) {
       toast('Quadrinho desenhado!', 'good', 2500);
     }, 'Desenhando...');
   }
+  async function moveBubble(p, i, key, at) {
+    const pos = { ...(p.panels[i].pos || {}), [key]: at };
+    p.panels[i].pos = pos;
+    replacePage(await call('updatePanel', p.id, i, { pos }));
+  }
   function editPanel(p, i) {
     const panel = p.panels[i];
     const own = el('textarea', { class: 'textarea small', id: 'pn-own', maxlength: 400, value: panel.user_desc || '',
@@ -660,6 +710,10 @@ async function renderEditor(id) {
         el('label', { class: 'field' }, el('span', { text: 'Som (onomatopeia)' }), sfx),
         el('label', { class: 'field' }, el('span', { text: 'Quer o desenho diferente? Descreva do seu jeito' }), own))),
       actions: [
+        panel.pos && Object.keys(panel.pos).length ? { label: 'Balões no lugar original', kind: 'btn-ghost', onClick: async () => {
+          replacePage(await call('updatePanel', p.id, i, { pos: null }));
+          if (page().id === p.id) paintStage();
+        } } : null,
         { label: 'Desenhar de novo', kind: 'btn-magic', icon: 'redo', close: false, onClick: async ev => {
           const b = ev.currentTarget;
           await busy(b, async () => {

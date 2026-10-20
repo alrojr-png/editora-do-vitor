@@ -99,3 +99,8 @@ body.print { background: #fff; display: block; height: auto; }
 .print .sheet { width: 210mm; height: 296mm; padding: 8mm; display: flex; align-items: center; justify-content: center; page-break-after: always; break-after: page; overflow: hidden; }
 .print .manga { width: 178mm; }
 .print .cover-sheet { width: 194mm; height: 280mm; }
+
+/* Editor: balões, narração e som podem ser arrastados. */
+.panel .drag { cursor: grab; touch-action: none; user-select: none; pointer-events: auto; }
+.panel .drag:hover { outline: 2px dashed var(--magic); outline-offset: 3px; }
+.panel .drag.dragging { cursor: grabbing; outline: 2px solid var(--magic); outline-offset: 3px; z-index: 4; }
