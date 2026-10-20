@@ -6,7 +6,7 @@ A IA usa a cota grátis da Cloudflare, que dá para umas 40 páginas de mangá p
 
 ## Como instalar
 
-1. Abra a página [Releases](../../releases/latest) e baixe o arquivo **Editora do Vítor Setup 1.0.0.exe**.
+1. Abra a página [Releases](../../releases/latest) e baixe o arquivo **Editora.do.Vitor.Setup.1.0.0.exe**.
 2. Abra o arquivo baixado. Se o Windows mostrar o aviso "O Windows protegeu o computador", clique em **Mais informações** e depois em **Executar assim mesmo**. O aviso aparece porque o app não tem assinatura digital paga, e não porque tem algum problema.
 3. Siga o instalador. Ele cria um atalho na área de trabalho.
 
